@@ -1,5 +1,7 @@
 # World Cup Statistical Irregularities
 
+[![View the notebook](https://img.shields.io/badge/notebook-nbviewer-F37626?logo=jupyter&logoColor=white)](https://nbviewer.org/github/jorge-sader/worldcup-anomalies/blob/main/notebooks/world_cup_irregularities.ipynb)
+
 Auto-fetches all **men's** FIFA World Cup data (1930–2022) — matches, scores, phases, referees,
 bookings — plus a FIFA-leadership table, and runs statistical models that surface **irregularities
 worth looking into**. The deliverable is the notebook `notebooks/world_cup_irregularities.ipynb`;
