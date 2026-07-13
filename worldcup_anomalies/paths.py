@@ -120,3 +120,81 @@ def easy_path_scores(
     return out.sort_values(["round_rank", "easiness_pct"], ascending=[False, False]).reset_index(
         drop=True
     )
+
+
+def group_draw_difficulty(
+    elo_matches: pd.DataFrame,
+    team_appearances: pd.DataFrame,
+    *,
+    n_seeds: int = 8,
+) -> pd.DataFrame:
+    """How soft was each team's GROUP draw — the part of the path the seeding/draw controls.
+
+    Motivation: by the quarter-final it is nearly impossible to avoid strong teams, so a
+    whole-path average hides the lever that actually matters — the group draw. If you wanted to
+    ease a team's route you would hand it a soft group (and let the other powers cluster
+    elsewhere and eliminate each other). This isolates the group stage and, crucially, compares
+    **within the same edition** (Elo inflates over time, so cross-era absolute comparison is
+    invalid) and **among the top-``n_seeds`` seeds** (top teams are separated into different
+    groups by design, so "strong team + soft group" is the norm and must be controlled for).
+
+    Returns one row per (tournament, team): mean group-opponent Elo, number of fellow seeds in
+    the group, a within-edition softness percentile (100 = softest group that year), and — for
+    the seeds — ``seed_soft_rank`` (1 = softest group among that edition's seeds). Merged with the
+    furthest round reached so soft-draw-then-deep-run cases are visible.
+    """
+    pre = pre_tournament_ratings(elo_matches)
+    pre_lookup = pre.set_index(["tournament_id", "team_id"])["elo_pre"]
+    seeds = {
+        tid: set(g.nlargest(n_seeds, "elo_pre")["team_id"])
+        for tid, g in pre.groupby("tournament_id")
+    }
+
+    grp = team_appearances[
+        team_appearances["stage_name"].isin(["group stage", "first group stage"])
+    ]
+    rows = []
+    for (tid, team), g in grp.groupby(["tournament_id", "team_id"]):
+        opp_elos, n_seed_opps = [], 0
+        for oid in g["opponent_id"]:
+            e = pre_lookup.get((tid, oid), np.nan)
+            if pd.notna(e):
+                opp_elos.append(e)
+            if oid in seeds.get(tid, set()):
+                n_seed_opps += 1
+        if not opp_elos:
+            continue
+        rows.append({
+            "tournament_id": tid,
+            "team_id": team,
+            "team_name": g["team_name"].iloc[0],
+            "grp_mean_opp_elo": float(np.mean(opp_elos)),
+            "n_seeds_in_group": n_seed_opps,
+            "is_seed": team in seeds.get(tid, set()),
+        })
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    out = out.merge(
+        pre[["tournament_id", "year"]].drop_duplicates(), on="tournament_id", how="left"
+    )
+    # Within-edition softness: 100 = softest group among ALL teams that year.
+    out["grp_softness_pct"] = 100.0 - out.groupby("tournament_id")["grp_mean_opp_elo"].rank(
+        pct=True
+    ).mul(100.0)
+    # Seed-controlled: rank among that edition's seeds (1 = softest group among seeds).
+    seed_rank = (
+        out[out["is_seed"]]
+        .groupby("tournament_id")["grp_mean_opp_elo"]
+        .rank(method="min")
+    )
+    out["seed_soft_rank"] = seed_rank
+    out["n_seeds_total"] = out.groupby("tournament_id")["is_seed"].transform("sum")
+
+    furthest = _furthest_round(team_appearances)
+    out = out.merge(
+        furthest[["tournament_id", "team_id", "round_label", "rank"]],
+        on=["tournament_id", "team_id"], how="left",
+    )
+    return out.sort_values(["year", "grp_mean_opp_elo"]).reset_index(drop=True)

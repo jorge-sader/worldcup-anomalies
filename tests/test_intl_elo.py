@@ -44,3 +44,16 @@ def test_probabilities_are_valid():
     d = load_data()
     em = annotate_world_cup(d.matches, build_intl_elo(load_intl_results()))
     assert ((em["elo_prob_home"] > 0) & (em["elo_prob_home"] < 1)).all()
+
+
+def test_group_draw_difficulty_flags_argentina_soft_groups():
+    from worldcup_anomalies.paths import group_draw_difficulty
+    d = load_data()
+    em = annotate_world_cup(d.matches, build_intl_elo(load_intl_results()))
+    gd = group_draw_difficulty(em, d.team_appearances)
+    arg = gd[gd["team_name"] == "Argentina"].set_index("year")
+    # 2014 was the softest seeded group of its edition; 2022 the 2nd-softest.
+    assert arg.loc[2014, "seed_soft_rank"] == 1
+    assert arg.loc[2022, "seed_soft_rank"] == 2
+    # Every edition has ~8 seeds and a well-defined softest group.
+    assert (gd["n_seeds_total"] > 0).all()

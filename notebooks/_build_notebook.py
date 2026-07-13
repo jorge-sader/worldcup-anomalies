@@ -309,7 +309,73 @@ plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 8. Detector — FIFA leadership lens (exploratory)
+## 8. Detector — Draw luck: the group is the lever
+
+The `easy_path` metric above averages over the *whole* run — but by the quarter-final it's nearly
+impossible to avoid strong teams, so that average drowns out the part that actually matters. If you
+wanted to *ease* a team's route, the lever is the **group draw**: hand it a soft group, let the
+other powers cluster elsewhere and knock each other out, and it reaches the semis having beaten
+nobody. So we isolate the **group stage** and measure it two ways that avoid the traps:
+
+- **Within-edition** — Elo inflates over time, so we compare a team's group only to the *other
+  groups that same year* (100 = softest group of the tournament).
+- **Seed-controlled** — the top teams are seeded into separate groups *by design*, so "strong team
+  + soft group" is the norm. We therefore also rank each seed's group against the *other seeds*
+  (`seed_soft_rank` = 1 means the softest group among that year's ~8 seeds).
+""")
+
+code(r"""
+from worldcup_anomalies.paths import group_draw_difficulty
+
+gd = group_draw_difficulty(elo, data.team_appearances)
+
+# Deep runs (SF/Final) reached from the softest groups, among seeds, within their edition.
+soft_deep = gd[(gd["rank"] >= 6) & (gd["is_seed"])].sort_values("seed_soft_rank")
+print("Teams that reached the SF/Final from the softest seeded group of their edition:")
+display(soft_deep[soft_deep.seed_soft_rank <= 2][
+    ["year", "team_name", "round_label", "grp_mean_opp_elo",
+     "n_seeds_in_group", "seed_soft_rank", "n_seeds_total"]
+].round(0).reset_index(drop=True))
+
+print("Argentina, every appearance — group softness (100=softest that year) and rank among seeds:")
+display(gd[gd.team_name == "Argentina"][
+    ["year", "round_label", "grp_softness_pct", "seed_soft_rank", "n_seeds_total"]
+].round(0).reset_index(drop=True))
+""")
+
+code(r"""
+# 2014 & 2022: Argentina's group vs the other seeds' groups that year.
+fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=False)
+for ax, yr in zip(axes, [2014, 2022]):
+    s = gd[(gd.year == yr) & (gd.is_seed)].sort_values("grp_mean_opp_elo")
+    colors = [PAL[1] if t == "Argentina" else PAL[0] for t in s.team_name]
+    ax.barh(s.team_name[::-1], s.grp_mean_opp_elo[::-1], color=colors[::-1])
+    ax.set_title(f"{yr}: seeded teams' group difficulty")
+    ax.set_xlabel("mean group-opponent Elo (shorter = softer draw)")
+    ax.set_xlim(s.grp_mean_opp_elo.min() - 40, s.grp_mean_opp_elo.max() + 10)
+plt.tight_layout(); plt.show()
+print("Argentina drew the SOFTEST seeded group in 2014 and the 2nd-softest in 2022 — "
+      "reaching the Final both times.")
+""")
+
+md(r"""
+**How to read this honestly.** Argentina's two most recent Final runs *did* start from the softest
+(2014) and 2nd-softest (2022) seeded groups of their editions — a real pattern the whole-path metric
+missed, and a fair basis for curiosity. But three caveats keep it a *lead, not a verdict*:
+
+1. **It's structural.** Soft-seeded-group-then-deep-run recurs throughout history (1990 West
+   Germany, 1998/2006 France, 2002 Brazil, 2010 Netherlands …) — winning is simply easier from a
+   soft group, and the best teams are seeded. Argentina is not unique.
+2. **Someone is always softest.** By construction one seed draws the softest group every edition;
+   observing it after the fact isn't evidence by itself.
+3. **No career pattern.** Across all of Argentina's tournaments the draw is mixed — the *hardest*
+   seeded group in 2006, 6th of 8 in 2002. The soft draws cluster in 2014 and 2022, i.e. n ≈ 2.
+
+That's exactly what a screen should do: surface the pattern, size it, and refuse to overclaim.
+""")
+
+md(r"""
+## 9. Detector — FIFA leadership lens (exploratory)
 
 The most speculative view: map each tournament to the FIFA president in office and ask whether
 over/under-performance clusters by era. **This is correlational and under-powered** — 22
@@ -345,7 +411,7 @@ plt.xticks(rotation=45, ha="right"); plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 9. Takeaways
+## 10. Takeaways
 
 - Using ratings grounded in **every international match since 1872** (not just World Cup games)
   removes the cold-start artefact where debutants entered at a neutral 1500 — and it *sharpens*
@@ -358,9 +424,13 @@ md(r"""
 - The one **systemic signal with a real test behind it** is host card bias: hosts receive fewer
   cards than their opponents ~69% of the time (sign-test p ≈ 0.01, BH q ≈ 0.07). Worth a deeper,
   confounder-aware look — hosts are also often the stronger, more possession-dominant side.
-- **Argentina is a counter-example, not a case:** its finalist runs rank among the *hardest* paths
-  (2022 harder than ~88% of all finalist runs), because it kept meeting elite teams from the
-  quarter-finals on. Soft *group* draws, brutal knockouts.
+- **Two questions, two different answers, for the same team.** Over the *whole* run Argentina's
+  finals were among the *hardest* paths (2022 harder than ~88% of finalist runs) — but that's
+  because everyone meets elite teams from the quarter-final on. Isolating the **group draw** (the
+  part seeding/the draw controls) flips it: Argentina reached the 2014 and 2022 finals from the
+  *softest* and *2nd-softest* seeded groups of their editions. Real pattern, correctly sized: it's
+  structural (soft seeded groups are common for eventual champions) and n ≈ 2, so a lead, not a
+  verdict. Picking the *right unit of analysis* is the whole game.
 - The **FIFA-leadership lens returns a null**: no era-clustering of host over-performance. Reported
   as-is, because a screen that only ever confirms its priors is worthless.
 

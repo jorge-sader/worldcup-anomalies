@@ -21,7 +21,7 @@ from .elo import compute_elo
 from .fetch import WorldCupData
 from .leadership import host_overperformance
 from .models import detect_convenient_results, score_surprise
-from .paths import easy_path_scores
+from .paths import easy_path_scores, group_draw_difficulty
 from .referees import referee_outliers, host_card_bias
 
 
@@ -174,6 +174,29 @@ def collect_anomalies(
             "statistic": float(r["easiness_pct"]),
             # Percentile -> z within the reached round.
             "anomaly_score": float(stats.norm.isf((100.5 - r["easiness_pct"]) / 100.0)),
+            "p_value": np.nan,
+        })
+
+    # --- 5b. Soft group draw then deep run -------------------------------------------
+    # The draw is the real lever: by the quarter-final nobody avoids strong teams, so what
+    # matters is whether a team was handed a soft GROUP and coasted to the latter stages.
+    # Measured within-edition and among the top-8 seeds (seeding separates strong teams by
+    # design, so this is descriptive/structural, NOT proof of manipulation).
+    gd = group_draw_difficulty(elo_matches, data.team_appearances)
+    soft_deep = gd[(gd["rank"] >= 6) & (gd["is_seed"]) & (gd["seed_soft_rank"] <= 2)]
+    for _, r in soft_deep.iterrows():
+        records.append({
+            "category": "soft-group-draw",
+            "subject": f"{int(r['year'])} {r['team_name']} ({r['round_label']})",
+            "detail": (
+                f"reached {r['round_label']} from the #{int(r['seed_soft_rank'])}-softest group "
+                f"among {int(r['n_seeds_total'])} seeds ({int(r['n_seeds_in_group'])} fellow "
+                f"seeds in group). STRUCTURAL: soft seeded groups are common — a lead, not proof"
+            ),
+            "tournament_id": r["tournament_id"],
+            "statistic": float(r["grp_softness_pct"]),
+            # Softest seed group (rank 1) scores a bit higher than 2nd; kept deliberately modest.
+            "anomaly_score": float(2.6 if r["seed_soft_rank"] == 1 else 2.2),
             "p_value": np.nan,
         })
 
