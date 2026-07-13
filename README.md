@@ -15,7 +15,10 @@ the logic lives in the importable, testable package `worldcup_anomalies/`.
 3. **Host & bracket effects** — host overperformance vs. strength expectation.
 4. **Per-team "easy path"** — any team reaching the QF/SF/Final with an unusually weak
    strength-of-schedule (few established powers beaten).
-5. **FIFA-leadership correlation** — anomaly rates by FIFA-president era (exploratory, caveated).
+5. **Draw luck vs manipulation** — group-draw softness (seed-controlled), plus a fair-draw
+   Monte-Carlo that separates a *lucky* soft group from an *engineered* one (soft group **and**
+   rivals clustered elsewhere). Only Brazil 2002 matches the full signature 1954–2022.
+6. **FIFA-leadership correlation** — anomaly rates by FIFA-president era (exploratory, caveated).
 
 ## Data sources
 

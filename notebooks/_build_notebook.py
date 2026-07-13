@@ -375,7 +375,84 @@ That's exactly what a screen should do: surface the pattern, size it, and refuse
 """)
 
 md(r"""
-## 9. Detector — FIFA leadership lens (exploratory)
+## 9. Lucky or engineered? A fair-draw Monte-Carlo
+
+The group-softness metric shows a team *got* a soft group, but not whether that's surprising —
+or whether the other powers were **packed together elsewhere** so they eliminated each other and
+cleared the favoured team's path. That packing is the real signature of an engineered draw, and
+we test it by simulating thousands of fair draws.
+
+The one thing we can assert without external pot data is that seeding **separates each group's
+strongest team** by design. So we hold each group's strongest team fixed and randomly
+redistribute everyone else, 10,000 times:
+
+- **`draw_luck_pct`** (per team) — where its group's opponent strength falls vs fair redraws.
+  *Low = softer than almost any fair draw.*
+- **`rival_clustering_pct`** (per edition) — where the *variance of group strength* falls.
+  *High = strong teams bunched into some groups and absent from others (rivals clustered).*
+
+The engineered pattern is the **conjunction**: deep run **+** soft group **+** clustered rivals.
+This null ignores pot 2–4 constraints, so it's deliberately *conservative* (under- not
+over-states how extreme a draw was).
+""")
+
+code(r"""
+from worldcup_anomalies.draw import draw_monte_carlo, engineered_draw_flags
+
+draws = draw_monte_carlo(elo, data.group_standings, data.team_appearances, n_sims=10000)
+
+print("Argentina's draw each edition (draw_luck low = soft group; clustering high = rivals packed):")
+display(draws[draws.team_name == "Argentina"][
+    ["year", "group_name", "round_label", "draw_luck_pct", "rival_clustering_pct"]
+].round(0).reset_index(drop=True))
+
+print("Deep-run teams (SF/Final) with the softest groups vs fair draws:")
+display(draws[draws.round_rank >= 6].sort_values("draw_luck_pct").head(8)[
+    ["year", "team_name", "round_label", "draw_luck_pct", "rival_clustering_pct"]
+].round(0).reset_index(drop=True))
+""")
+
+code(r"""
+# The engineered signature: soft group AND clustered rivals AND a deep run.
+flags = engineered_draw_flags(draws)
+print("Teams matching the ENGINEERED-DRAW signature (1954–2022):")
+display(flags[["year", "team_name", "round_label",
+               "draw_luck_pct", "rival_clustering_pct"]].round(0).reset_index(drop=True))
+
+fig, ax = plt.subplots(figsize=(8.5, 6))
+deep = draws[draws.round_rank >= 6]
+ax.scatter(deep.draw_luck_pct, deep.rival_clustering_pct, s=45, color=PAL[0], alpha=0.6,
+           label="SF/Final teams")
+for _, r in flags.iterrows():
+    ax.scatter(r.draw_luck_pct, r.rival_clustering_pct, s=120, color=PAL[1], zorder=5)
+    ax.annotate(f"{int(r.year)} {r.team_name}", (r.draw_luck_pct, r.rival_clustering_pct),
+                fontsize=9, fontweight="bold", xytext=(6, 0), textcoords="offset points")
+for _, r in deep[deep.team_name == "Argentina"].iterrows():
+    ax.annotate(f"{int(r.year)} ARG", (r.draw_luck_pct, r.rival_clustering_pct),
+                fontsize=8, color=PAL[3], xytext=(4, 4), textcoords="offset points")
+ax.axvspan(0, 20, color=PAL[1], alpha=0.06); ax.axhspan(80, 100, color=PAL[1], alpha=0.06)
+ax.set_xlabel("draw_luck_pct  (← softer group)")
+ax.set_ylabel("rival_clustering_pct  (rivals clustered →)")
+ax.set_title("Engineered-draw quadrant = soft group (left) AND clustered rivals (top)")
+ax.legend(loc="lower right"); plt.tight_layout(); plt.show()
+""")
+
+md(r"""
+**The verdict on draw manipulation.** Exactly **one** team-edition in 1954–2022 lands in the
+engineered quadrant — **Brazil 2002**: a group softer than ~93% of fair draws while the other
+powers were more clustered than 98% of draws (that was the edition of France, Argentina and
+Portugal all going out in the group stage). Even so, this is a *statistical signature, not
+evidence of wrongdoing* — someone occupies the tail of any distribution.
+
+And on the original question: **Argentina does not match it.** Their 2014 and 2022 groups were
+genuinely soft (softer than ~80% of fair draws — the intuition was right), but the rivals were
+**not** clustered — 2022 was in fact the *least*-clustered draw of any edition. In 2002, the one
+year rivals *were* clustered, Argentina was the **victim**, drawn into the group of death and
+eliminated. So: a lucky soft group, twice — not an engineered path.
+""")
+
+md(r"""
+## 10. Detector — FIFA leadership lens (exploratory)
 
 The most speculative view: map each tournament to the FIFA president in office and ask whether
 over/under-performance clusters by era. **This is correlational and under-powered** — 22
@@ -411,7 +488,7 @@ plt.xticks(rotation=45, ha="right"); plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 10. Takeaways
+## 11. Takeaways
 
 - Using ratings grounded in **every international match since 1872** (not just World Cup games)
   removes the cold-start artefact where debutants entered at a neutral 1500 — and it *sharpens*
@@ -431,6 +508,10 @@ md(r"""
   *softest* and *2nd-softest* seeded groups of their editions. Real pattern, correctly sized: it's
   structural (soft seeded groups are common for eventual champions) and n ≈ 2, so a lead, not a
   verdict. Picking the *right unit of analysis* is the whole game.
+- **Lucky ≠ engineered.** A fair-draw Monte-Carlo separates a soft group from an engineered one
+  (soft group *and* rivals clustered elsewhere). Only **Brazil 2002** matches the full signature
+  in 1954–2022; Argentina's soft 2014/2022 groups do **not** (rivals weren't clustered — 2022 was
+  the most balanced draw on record). Even Brazil 2002 is a signature, not proof.
 - The **FIFA-leadership lens returns a null**: no era-clustering of host over-performance. Reported
   as-is, because a screen that only ever confirms its priors is worthless.
 

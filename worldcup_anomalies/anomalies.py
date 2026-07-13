@@ -20,6 +20,7 @@ from scipy import stats
 from .elo import compute_elo
 from .fetch import WorldCupData
 from .leadership import host_overperformance
+from .draw import draw_monte_carlo, engineered_draw_flags
 from .models import detect_convenient_results, score_surprise
 from .paths import easy_path_scores, group_draw_difficulty
 from .referees import referee_outliers, host_card_bias
@@ -197,6 +198,26 @@ def collect_anomalies(
             "statistic": float(r["grp_softness_pct"]),
             # Softest seed group (rank 1) scores a bit higher than 2nd; kept deliberately modest.
             "anomaly_score": float(2.6 if r["seed_soft_rank"] == 1 else 2.2),
+            "p_value": np.nan,
+        })
+
+    # --- 5c. Engineered-draw signature (Monte-Carlo) ---------------------------------
+    # The conjunction that actually matches "the draw was rigged for this team": a deep run
+    # AND a group softer than nearly all fair redraws AND rivals clustered together elsewhere
+    # (so they eliminated each other). Any one alone is ordinary; only the triple is notable.
+    draws = draw_monte_carlo(elo_matches, data.group_standings, data.team_appearances)
+    for _, r in engineered_draw_flags(draws).iterrows():
+        records.append({
+            "category": "engineered-draw",
+            "subject": f"{int(r['year'])} {r['team_name']} ({r['round_label']})",
+            "detail": (
+                f"group softer than {100 - r['draw_luck_pct']:.0f}% of fair draws AND rivals "
+                f"more clustered than {r['rival_clustering_pct']:.0f}% of draws — the "
+                f"soft-group + clustered-rivals conjunction. Signature only, NOT proof"
+            ),
+            "tournament_id": r["tournament_id"],
+            "statistic": float(r["rival_clustering_pct"]),
+            "anomaly_score": 3.0,
             "p_value": np.nan,
         })
 
