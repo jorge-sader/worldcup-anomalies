@@ -1,0 +1,34 @@
+[project]
+name = "worldcup-anomalies"
+version = "0.1.0"
+description = "Auto-fetch men's FIFA World Cup data (1930-2022) and flag statistical irregularities worth looking into."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "statsmodels>=0.14",
+    "matplotlib>=3.8",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+notebook = [
+    "jupyter>=1.0",
+    "ipykernel>=6.29",
+    "nbconvert>=7.16",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["worldcup_anomalies"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

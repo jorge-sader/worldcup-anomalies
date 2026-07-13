@@ -1,0 +1,14 @@
+# Data cache (re-fetchable)
+data/raw/
+data/processed/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Notebook execution artifacts
+notebooks/*.nbconvert.ipynb
