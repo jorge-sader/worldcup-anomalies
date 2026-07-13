@@ -46,6 +46,19 @@ def test_probabilities_are_valid():
     assert ((em["elo_prob_home"] > 0) & (em["elo_prob_home"] < 1)).all()
 
 
+def test_phase_split_columns_and_bounds():
+    from worldcup_anomalies.paths import phase_strength_split
+    d = load_data()
+    em = annotate_world_cup(d.matches, build_intl_elo(load_intl_results()))
+    sp = phase_strength_split(em, d.team_appearances)
+    for col in ["group_softness_pct", "ko_toughness_pct", "split_index"]:
+        assert sp[col].between(0, 100).all()
+    # Argentina's 2022 group was among the softest of its edition.
+    arg22 = sp[(sp.year == 2022) & (sp.team_name == "Argentina")]
+    assert len(arg22) == 1
+    assert arg22["group_softness_pct"].iloc[0] >= 75
+
+
 def test_group_draw_difficulty_flags_argentina_soft_groups():
     from worldcup_anomalies.paths import group_draw_difficulty
     d = load_data()

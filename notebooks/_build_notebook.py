@@ -309,6 +309,37 @@ plt.tight_layout(); plt.show()
 """)
 
 md(r"""
+### The group / knockout split
+
+A whole-path average hides the *shape* of a run. Splitting strength-of-schedule into the group
+phase vs the knockout phase makes the "coast then earn it" profile explicit: `group_softness_pct`
+(100 = softest group that year) against `ko_toughness_pct` (100 = toughest knockout opponents),
+with `split_index` high when both hold. The knockout mean includes the round of 16, so a run
+that's only brutal in the final match or two scores moderately.
+""")
+
+code(r"""
+from worldcup_anomalies.paths import phase_strength_split
+
+split = phase_strength_split(elo, data.team_appearances)
+deep_split = split[split["rank"] >= 6]
+print("Purest 'soft group, brutal knockout' profiles among SF/Final teams:")
+display(deep_split.sort_values("split_index", ascending=False).head(8)[
+    ["year", "team_name", "round_label", "group_softness_pct",
+     "ko_toughness_pct", "split_index"]
+].round(0).reset_index(drop=True))
+
+print("Argentina — group vs knockout, each knockout appearance:")
+display(split[split.team_name == "Argentina"].sort_values("year")[
+    ["year", "round_label", "group_opp_elo", "ko_max_opp_elo",
+     "group_softness_pct", "ko_toughness_pct", "split_index"]
+].round(0).reset_index(drop=True))
+print("Argentina's 2014 & 2022 groups were among the softest (softness ~88), but knockout "
+      "toughness was only moderate — the R16 (Switzerland, Australia) was beatable and the "
+      "brutality was concentrated in the last one or two games. A soft group, not a brutal path.")
+""")
+
+md(r"""
 ## 8. Detector — Draw luck: the group is the lever
 
 The `easy_path` metric above averages over the *whole* run — but by the quarter-final it's nearly

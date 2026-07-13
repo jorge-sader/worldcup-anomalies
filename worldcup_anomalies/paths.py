@@ -122,6 +122,77 @@ def easy_path_scores(
     )
 
 
+def phase_strength_split(
+    elo_matches: pd.DataFrame,
+    team_appearances: pd.DataFrame,
+) -> pd.DataFrame:
+    """Split each run's strength-of-schedule into its group vs knockout phases.
+
+    A single whole-path average hides the shape of a run. This separates the two phases so the
+    profile is visible: a team can "coast" through a soft group and only meet elite opposition
+    once the bracket thins. Returns one row per (tournament, team) that reached the knockouts:
+
+        ``group_opp_elo`` / ``ko_opp_elo``     : mean opponent pre-tournament Elo per phase
+        ``ko_max_opp_elo``                     : toughest single knockout opponent
+        ``group_softness_pct``                 : within-edition, 100 = softest group that year
+        ``ko_toughness_pct``                   : within-edition (knockout teams), 100 = toughest
+        ``split_index``                        : mean of the two — high = soft group + hard knockout
+
+    Because Elo inflates over time, both percentiles are computed *within edition*; the raw
+    per-phase Elo is returned too for context. Note the knockout mean includes the round of 16,
+    so a run that is only brutal in the final one or two games scores moderately.
+    """
+    pre = pre_tournament_ratings(elo_matches)
+    pre_lookup = pre.set_index(["tournament_id", "team_id"])["elo_pre"]
+
+    def _phase_mean(sub: pd.DataFrame) -> float:
+        elos = [
+            pre_lookup.get((r.tournament_id, r.opponent_id), np.nan)
+            for r in sub.itertuples()
+        ]
+        elos = [e for e in elos if pd.notna(e)]
+        return float(np.mean(elos)) if elos else np.nan
+
+    def _phase_max(sub: pd.DataFrame) -> float:
+        elos = [
+            pre_lookup.get((r.tournament_id, r.opponent_id), np.nan)
+            for r in sub.itertuples()
+        ]
+        elos = [e for e in elos if pd.notna(e)]
+        return float(np.max(elos)) if elos else np.nan
+
+    rows = []
+    for (tid, team), g in team_appearances.groupby(["tournament_id", "team_id"]):
+        ko = g[g["knockout_stage"] == 1]
+        if ko.empty:
+            continue
+        grp = g[g["group_stage"] == 1]
+        rows.append({
+            "tournament_id": tid,
+            "team_id": team,
+            "team_name": g["team_name"].iloc[0],
+            "group_opp_elo": _phase_mean(grp),
+            "ko_opp_elo": _phase_mean(ko),
+            "ko_max_opp_elo": _phase_max(ko),
+        })
+
+    out = pd.DataFrame(rows).dropna(subset=["group_opp_elo", "ko_opp_elo"])
+    if out.empty:
+        return out
+    out["group_softness_pct"] = 100.0 - out.groupby("tournament_id")["group_opp_elo"].rank(
+        pct=True
+    ).mul(100.0)
+    out["ko_toughness_pct"] = out.groupby("tournament_id")["ko_opp_elo"].rank(pct=True).mul(100.0)
+    out["split_index"] = (out["group_softness_pct"] + out["ko_toughness_pct"]) / 2.0
+
+    furthest = _furthest_round(team_appearances)
+    out = out.merge(
+        furthest[["tournament_id", "team_id", "round_label", "rank"]],
+        on=["tournament_id", "team_id"], how="left",
+    ).merge(pre[["tournament_id", "year"]].drop_duplicates(), on="tournament_id", how="left")
+    return out.sort_values("split_index", ascending=False).reset_index(drop=True)
+
+
 def group_draw_difficulty(
     elo_matches: pd.DataFrame,
     team_appearances: pd.DataFrame,
