@@ -41,3 +41,20 @@ def test_engineered_signature_flags_brazil_2002():
     _, draws = _draws()
     flags = engineered_draw_flags(draws)
     assert ((flags.year == 2002) & (flags.team_name == "Brazil")).any()
+
+
+def test_edition_summary_myth_buster():
+    from worldcup_anomalies.draw import edition_draw_summary
+    d = load_data()
+    em = annotate_world_cup(d.matches, build_intl_elo(load_intl_results()))
+    summary = edition_draw_summary(
+        em, d.group_standings, d.team_appearances, d.tournaments, n_sims=3000
+    )
+    assert summary["year"].is_monotonic_increasing
+    assert summary["rival_clustering_pct"].between(0, 100).all()
+    # The softest-group team rarely wins — the core myth-buster (well under half).
+    assert summary["softest_team_won"].mean() < 0.4
+    # 2022 was the most balanced draw of all editions.
+    assert summary.loc[summary.year == 2022, "rival_clustering_pct"].iloc[0] == summary[
+        "rival_clustering_pct"
+    ].min()

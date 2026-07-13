@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from .elo import pre_tournament_ratings
-from .paths import _furthest_round
+from .paths import _furthest_round, group_draw_difficulty
 
 
 def draw_monte_carlo(
@@ -101,6 +101,60 @@ def draw_monte_carlo(
             })
 
     return pd.DataFrame(rows).sort_values(["year", "draw_luck_pct"]).reset_index(drop=True)
+
+
+def edition_draw_summary(
+    elo_matches: pd.DataFrame,
+    group_standings: pd.DataFrame,
+    team_appearances: pd.DataFrame,
+    tournaments: pd.DataFrame,
+    *,
+    n_sims: int = 10000,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """One row per World Cup: how soft was the winner's draw, and how balanced was the draw.
+
+    A myth-buster at a glance. Columns:
+
+        ``champion``                 : the tournament winner
+        ``champ_group_softness_pct`` : within-edition, 100 = champion had the softest group
+        ``champ_softness_rank``      : the champion's group softness rank (1 = softest of ``n_teams``)
+        ``rival_clustering_pct``     : 100 = powers packed into some groups (lopsided draw), 0 = balanced
+        ``softest_group_team``       : who actually drew the softest group that edition
+        ``softest_team_won``         : did that team go on to win? (usually no)
+
+    Editions without a uniform group format are omitted.
+    """
+    draws = draw_monte_carlo(
+        elo_matches, group_standings, team_appearances, n_sims=n_sims, seed=seed
+    )
+    gd = group_draw_difficulty(elo_matches, team_appearances)
+    gd["softness_rank"] = gd.groupby("tournament_id")["grp_mean_opp_elo"].rank(method="min")
+    gd["n_teams"] = gd.groupby("tournament_id")["team_id"].transform("count")
+    t = tournaments[["tournament_id", "year", "host_country", "winner"]]
+
+    rows = []
+    for tid, g in draws.groupby("tournament_id"):
+        info = t[t["tournament_id"] == tid]
+        if info.empty:
+            continue
+        info = info.iloc[0]
+        softest = g.loc[g["draw_luck_pct"].idxmin()]
+        champ = gd[(gd["tournament_id"] == tid) & (gd["team_name"] == info["winner"])]
+        rows.append({
+            "year": int(info["year"]),
+            "host": info["host_country"],
+            "champion": info["winner"],
+            "champ_group_softness_pct": (
+                float(champ["grp_softness_pct"].iloc[0]) if len(champ) else np.nan
+            ),
+            "champ_softness_rank": int(champ["softness_rank"].iloc[0]) if len(champ) else -1,
+            "n_teams": int(champ["n_teams"].iloc[0]) if len(champ) else -1,
+            "rival_clustering_pct": float(g["rival_clustering_pct"].iloc[0]),
+            "softest_group_team": softest["team_name"],
+            "softest_team_won": bool(softest["team_name"] == info["winner"]),
+        })
+    return pd.DataFrame(rows).sort_values("year").reset_index(drop=True)
 
 
 def engineered_draw_flags(

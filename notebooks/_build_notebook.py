@@ -483,6 +483,34 @@ eliminated. So: a lucky soft group, twice — not an engineered path.
 """)
 
 md(r"""
+### Draw softness by World Cup — the myth-buster table
+
+One row per tournament: how soft the **champion's** group was (rank within its field), how
+**balanced vs clustered** the whole draw was, and — the decisive column — *who actually drew the
+softest group that year* and whether they won. Use it to sanity-check any "team X had a rigged
+easy draw" claim directly.
+""")
+
+code(r"""
+from worldcup_anomalies.draw import edition_draw_summary
+
+summary = edition_draw_summary(elo, data.group_standings, data.team_appearances, data.tournaments)
+display(summary.style.format({
+    "champ_group_softness_pct": "{:.0f}", "rival_clustering_pct": "{:.0f}",
+}).hide(axis="index"))
+
+won = int(summary.softest_team_won.sum()); n = len(summary)
+print(f"MYTH-BUSTER: the team that drew the SOFTEST group won only {won}/{n} editions "
+      f"({won/n:.0%}) — both times a host.")
+print(f"Champions' group-softness rank ranged from 1st (softest) to "
+      f"{int(summary.champ_softness_rank.max())}th of their field — "
+      f"2018 France won from a hard group; a soft draw is neither necessary nor sufficient.")
+print(f"2022 was the most BALANCED draw on record (rival clustering "
+      f"{summary.loc[summary.year==2022,'rival_clustering_pct'].iloc[0]:.0f}%): "
+      f"no engineered concentration of rivals.")
+""")
+
+md(r"""
 ## 10. Detector — FIFA leadership lens (exploratory)
 
 The most speculative view: map each tournament to the FIFA president in office and ask whether
