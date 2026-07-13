@@ -30,11 +30,14 @@ individual scores are inflated by that multiplicity. Nothing here is proof of wr
 ranked table is a list of **leads to investigate**, with a Benjamini–Hochberg *q*-value attached
 wherever a genuine statistical test exists so the multiple-testing burden is explicit.
 
-**Method in one paragraph.** There is no reliable open historical strength rating for national
-teams, so we build one in-repo: a chronological **Elo** engine over every men's World Cup match
-(host nations get a home-field bonus at home only). Everything downstream — expected goals,
-strength-of-schedule, host over/under-performance — hangs off those ratings. We then run five
-detectors and fold their outputs into one comparable **anomaly score**.
+**Team strength.** Every downstream question — expected goals, strength-of-schedule, host
+over/under-performance — needs a measure of how strong each team was *at the time*. We use an
+**Elo** rating built over **every international match since 1872** (friendlies, qualifiers,
+continental cups, World Cups) from the `martj42/international_results` dataset. This matters: a
+World-Cup-only Elo would enter each debutant at a neutral 1500 regardless of real strength (Qatar
+2022, Japan on debut in 1998, …); the full-history version grounds every team in its actual
+record from the first whistle. We keep the World-Cup-only Elo too, purely as a self-contained
+cross-check.
 """)
 
 code(r"""
@@ -54,18 +57,20 @@ pd.set_option("display.max_colwidth", 90)
 
 from worldcup_anomalies.fetch import load_data
 from worldcup_anomalies.elo import compute_elo, pre_tournament_ratings
+from worldcup_anomalies.intl_elo import load_intl_results, build_intl_elo, annotate_world_cup
 
-data = load_data()                 # men's-only, cached under data/raw/
-elo_matches = compute_elo(data.matches)
-print("Loaded men's World Cup data and computed Elo ratings.")
+data = load_data()                                  # men's-only, cached under data/raw/
+elo_wc = compute_elo(data.matches)                  # self-contained World-Cup-only Elo
+elo = annotate_world_cup(data.matches, build_intl_elo(load_intl_results()))  # grounded, primary
+print("Loaded data and computed both World-Cup-only and full-history Elo ratings.")
 """)
 
 md(r"""
 ## 1. What's in the data
 
-The primary source is the [`jfjelstul/worldcup`](https://github.com/jfjelstul/worldcup)
+The match/referee/booking source is the [`jfjelstul/worldcup`](https://github.com/jfjelstul/worldcup)
 normalized dataset (filtered to men's editions). Card/booking data only exists from **1970**
-onward — that's a hard limit of the historical record, so the referee-discipline analysis is a
+onward — a hard limit of the historical record — so the referee-discipline analysis is a
 1970–2022 story. Referee *identity* and match results span the full 1930–2022.
 """)
 
@@ -78,29 +83,55 @@ print(f"Card data: {card_years.min()}–{card_years.max()}  |  {len(data.referee
 """)
 
 md(r"""
-## 2. The headline: irregularities worth looking into
+## 2. Team strength: World-Cup-only vs full international history
+
+Why this matters for the whole analysis. A World-Cup-only Elo has a **cold-start** problem: it has
+never seen a team until its World Cup debut, so it enters that team at a neutral **1500** — even
+if the team is, by any real measure, weak or strong. The full-history Elo has already watched the
+team play dozens of qualifiers and friendlies, so it enters with a *grounded* rating.
+
+The clearest illustration is the ratings **entering the 2022 World Cup**: under the full-history
+model nobody sits at a blank 1500 (Qatar enters around 1790, earned over years of Asian
+qualifiers), and the spread between strong and weak teams is far more realistic.
+""")
+
+code(r"""
+pw = (pre_tournament_ratings(elo_wc).query("tournament_id == 'WC-2022'")
+      [["team_name", "elo_pre"]].rename(columns={"elo_pre": "wc_only"}))
+pf = (pre_tournament_ratings(elo).query("tournament_id == 'WC-2022'")
+      [["team_name", "elo_pre"]].rename(columns={"elo_pre": "full_history"}))
+cmp = pw.merge(pf, on="team_name")
+cmp["debutant_pinned_at_1500"] = cmp["wc_only"].round(0) == 1500
+display(cmp.sort_values("full_history", ascending=False).round(0)
+        .reset_index(drop=True))
+print("Under the World-Cup-only Elo, Qatar (a WC debutant) is pinned at 1500; "
+      "the full-history Elo enters them near 1790 from their real record.")
+""")
+
+md(r"""
+The rest of the notebook uses the **full-history** ratings (`elo`). Everything is written to work
+with either — swap in `elo_wc` to reproduce the self-contained version.
+""")
+
+md(r"""
+## 3. The headline: irregularities worth looking into
 
 `collect_anomalies` runs all five detectors and maps each onto a single, clipped `anomaly_score`
 (a z-magnitude) so they can be ranked together. `q_value` is the Benjamini–Hochberg FDR value,
 populated only where a real test exists (referee card rates, host card bias).
-
-Read this as a triage list, top to bottom — then use the per-detector sections below to
-understand *why* each item was flagged.
 """)
 
 code(r"""
 from worldcup_anomalies.anomalies import collect_anomalies
 
-ranked = collect_anomalies(data, elo_matches)
-print(f"{len(ranked)} flagged items across "
-      f"{ranked.category.nunique()} detectors\n")
+ranked = collect_anomalies(data, elo)
+print(f"{len(ranked)} flagged items across {ranked.category.nunique()} detectors\n")
 display(ranked.head(25).set_index("rank")[
     ["category", "subject", "detail", "anomaly_score", "q_value"]
 ])
 """)
 
 code(r"""
-# How the flags distribute across detectors and severity.
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
 cat_order = ranked.category.value_counts()
 ax1.barh(cat_order.index[::-1], cat_order.values[::-1],
@@ -109,8 +140,7 @@ ax1.set_title("Flags per detector"); ax1.set_xlabel("count")
 
 for i, cat in enumerate(cat_order.index):
     sub = ranked[ranked.category == cat]
-    ax2.scatter(sub.anomaly_score, [i] * len(sub), color=PAL[i % len(PAL)],
-                alpha=0.75, s=35)
+    ax2.scatter(sub.anomaly_score, [i] * len(sub), color=PAL[i % len(PAL)], alpha=0.75, s=35)
 ax2.set_yticks(range(len(cat_order))); ax2.set_yticklabels(cat_order.index)
 ax2.set_xlabel("anomaly score (clipped z)"); ax2.set_title("Score by detector")
 ax2.invert_yaxis()
@@ -118,41 +148,38 @@ plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 3. Detector — Upsets (results that defied strength)
+## 4. Detector — Upsets (results that defied strength)
 
 A favourite thrashing a minnow is *statistically* surprising but not interesting. What's worth a
 look is the reverse: a clearly weaker side (by pre-match Elo) **winning**. We rank those by the
-Elo gap the result defied. This is a sanity check as much as a detector — it should rediscover
-the famous shocks, and it does (South Korea 2-0 Germany 2018, Saudi Arabia beating Argentina
-2022, Cameroon over Brazil, and the 2002 South Korea run whose refereeing was itself notorious).
+Elo gap the result defied. With grounded ratings this rediscovers the canonical shocks — Cameroon
+over Brazil (1990), Argentina losing to Saudi Arabia (2022), Switzerland over Spain (2010),
+Algeria over West Germany (1982), South Korea over Germany (2018).
 """)
 
 code(r"""
 from worldcup_anomalies.models import score_surprise
 
-ss = score_surprise(elo_matches, data.team_appearances)
+ss = score_surprise(elo, data.team_appearances)
 upsets = ss[(ss.upset) & (ss.year >= 1958)].sort_values("elo_gap_defied", ascending=False)
-show = upsets.head(12)[[
+display(upsets.head(12)[[
     "year", "match_name", "stage_name", "home_team_score", "away_team_score", "elo_gap_defied"
-]]
-display(show.reset_index(drop=True))
+]].reset_index(drop=True))
 
 fig, ax = plt.subplots()
-ax.scatter(ss.elo_home_pre - ss.elo_away_pre,
-           ss.home_team_score - ss.away_team_score,
+ax.scatter(ss.elo_home_pre - ss.elo_away_pre, ss.home_team_score - ss.away_team_score,
            s=14, alpha=0.3, color=PAL[0], label="all matches")
 ax.scatter(upsets.elo_home_pre - upsets.elo_away_pre,
            upsets.home_team_score - upsets.away_team_score,
            s=28, color=PAL[1], label="upset")
 ax.axhline(0, color="k", lw=0.6); ax.axvline(0, color="k", lw=0.6)
-ax.set_xlabel("pre-match Elo gap (home − away)")
-ax.set_ylabel("goal margin (home − away)")
+ax.set_xlabel("pre-match Elo gap (home − away)"); ax.set_ylabel("goal margin (home − away)")
 ax.set_title("Results vs strength: upsets are the off-diagonal points")
 ax.legend(); plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 4. Detector — "Convenient" group results
+## 5. Detector — "Convenient" group results
 
 The archetype is the 1982 **Disgrace of Gijón**: West Germany beat Austria 1-0, a result that
 sent *both* through at Algeria's expense, in a match played the day *after* Algeria had finished.
@@ -160,7 +187,7 @@ FIFA's response was to make final group matches kick off simultaneously from 198
 
 The detector flags the last-played first-round group match whose result advanced **both** teams,
 where a non-advancing team had already finished on an earlier day (an informational advantage).
-Tellingly, it flags **only 1982** — the structure that made this possible was legislated away in
+Tellingly it flags **only 1982** — the structure that made this possible was legislated away in
 1986, and the detector independently rediscovers that.
 """)
 
@@ -177,19 +204,18 @@ print("These are the last two World Cups (both 1982) before simultaneous final "
 """)
 
 md(r"""
-## 5. Detector — Referee discipline
+## 6. Detector — Referee discipline
 
-Two questions. **(a)** Do individual referees hand out far more (or fewer) cards than the match
-context warrants? We model expected cards from era, knockout-vs-group, and how competitive the
-match is (by Elo), then score each referee's standardized residual. **(b)** Do **hosts** get an
-easier ride from officials — fewer cards than their opponents in the matches they play?
+**(a)** Do individual referees hand out far more (or fewer) cards than the match context warrants?
+We model expected cards from era, knockout-vs-group, and how competitive the match is (by Elo),
+then score each referee's standardized residual. **(b)** Do **hosts** get an easier ride — fewer
+cards than their opponents in the matches they play?
 """)
 
 code(r"""
 from worldcup_anomalies.referees import referee_outliers, host_card_bias
 
-ro = referee_outliers(data.matches, data.referee_appearances, data.bookings,
-                      elo_matches, min_matches=5)
+ro = referee_outliers(data.matches, data.referee_appearances, data.bookings, elo, min_matches=5)
 top = ro.reindex(ro.z.abs().sort_values(ascending=False).index).head(12)
 display(top[["referee_name", "referee_country", "n_matches",
              "obs_cards", "exp_cards", "cards_per_match", "z"]].reset_index(drop=True))
@@ -209,28 +235,26 @@ per_t, host_bias = host_card_bias(data.matches, data.bookings)
 print("HOST CARD BIAS (matches involving the host nation, 1970+):")
 for k, v in host_bias.items():
     print(f"  {k}: {v}")
-print(f"\nInterpretation: in decisive matches the host received FEWER cards than its opponent "
+print(f"\nIn decisive matches the host received FEWER cards than its opponent "
       f"{host_bias['share_host_fewer']:.0%} of the time "
       f"(sign-test p = {host_bias['sign_test_p']:.3f}). Suggestive of a home-crowd/officiating "
-      f"tilt, though card counts also reflect that hosts are often the stronger, less-pressed side.")
+      f"tilt — though hosts are also often the stronger, less-pressed side.")
 """)
 
 md(r"""
-## 6. Detector — "Easy path" / seeding luck
+## 7. Detector — "Easy path" / seeding luck
 
 For every team that reached the quarter-final or deeper, we measure the strength of the teams it
 actually had to beat — the mean pre-tournament Elo of its opponents — and how many established
 "powers" (top-quartile that edition) it faced. A run to the semi-final or final past unusually
-weak opposition is a lucky/soft draw, *whether or not* the team was the host.
-
-We compare within the round reached (finalists vs finalists) and skip 1930–1938, where every
-team enters at the base rating and opponent strength is meaningless (Elo cold-start).
+weak opposition is a soft draw, *whether or not* the team was the host. We compare within the
+round reached (finalists vs finalists) so that deeper runs facing more games aren't penalised.
 """)
 
 code(r"""
 from worldcup_anomalies.paths import easy_path_scores
 
-ep = easy_path_scores(elo_matches, data.team_appearances)
+ep = easy_path_scores(elo, data.team_appearances)
 finals = ep[ep.round_label == "Final"].sort_values("mean_opp_elo").head(6)
 semis = ep[ep.round_label == "SF"].sort_values("mean_opp_elo").head(6)
 print("Easiest routes to the FINAL:")
@@ -239,24 +263,53 @@ display(finals[["year", "team_name", "mean_opp_elo", "max_opp_elo",
 print("Easiest routes to the SEMI-FINAL:")
 display(semis[["year", "team_name", "mean_opp_elo", "max_opp_elo",
                "n_powers_faced", "easiness_pct"]].reset_index(drop=True))
+""")
 
+md(r"""
+### A worked check: did Argentina have easy paths?
+
+A natural suspicion is that a serial deep-runner reached finals via soft draws. The data says the
+opposite — Argentina's finalist runs sit at the **hard** end of the distribution, because from the
+quarter-finals on they repeatedly met elite teams (2022: Netherlands, Croatia, France; 2014:
+Netherlands, Germany). `easiness_pct` is the percentile of *weakness* within the round reached, so
+**low = hard path**.
+""")
+
+code(r"""
+arg = ep[ep.team_name == "Argentina"].copy()
+n_final = (ep.round_label == "Final").sum()
+n_sf = (ep.round_label == "SF").sum()
+display(arg[["year", "round_label", "n_opponents", "mean_opp_elo",
+             "max_opp_elo", "n_powers_faced", "easiness_pct"]]
+        .sort_values("year").reset_index(drop=True))
+argf = arg[arg.round_label == "Final"].sort_values("easiness_pct")
+for _, r in argf.iterrows():
+    harder_than = 100 - r.easiness_pct
+    print(f"{int(r.year)} Argentina (Final): path was harder than {harder_than:.0f}% "
+          f"of all {n_final} finalist runs — faced {int(r.n_powers_faced)} top-quartile teams "
+          f"(toughest Elo {r.max_opp_elo:.0f}).")
+print("\nConclusion: Argentina is a counter-example to an easy path, not an instance of one.")
+""")
+
+code(r"""
 deep = ep[ep.round_rank >= 6].copy()
 fig, ax = plt.subplots()
-sc = ax.scatter(deep.mean_opp_elo, deep.n_powers_faced,
-                c=deep.round_rank, cmap="viridis", s=45)
-for _, r in pd.concat([finals.head(3), semis.head(3)]).iterrows():
-    ax.annotate(f"{int(r.year)} {r.team_name}",
-                (r.mean_opp_elo, r.n_powers_faced), fontsize=8,
-                xytext=(4, 4), textcoords="offset points")
-ax.set_xlabel("mean opponent Elo (lower = easier)")
+sc = ax.scatter(deep.mean_opp_elo, deep.n_powers_faced, c=deep.round_rank, cmap="viridis", s=45)
+for _, r in deep[deep.team_name == "Argentina"].iterrows():
+    ax.annotate(f"{int(r.year)} ARG", (r.mean_opp_elo, r.n_powers_faced), fontsize=8,
+                color=PAL[1], fontweight="bold", xytext=(4, 4), textcoords="offset points")
+for _, r in pd.concat([finals.head(2), semis.head(2)]).iterrows():
+    ax.annotate(f"{int(r.year)} {r.team_name}", (r.mean_opp_elo, r.n_powers_faced),
+                fontsize=8, xytext=(4, -8), textcoords="offset points")
+ax.set_xlabel("mean opponent Elo (lower = easier path)")
 ax.set_ylabel("established powers faced")
-ax.set_title("Strength of schedule for deep runs (SF/Final)")
+ax.set_title("Strength of schedule for deep runs (Argentina highlighted)")
 plt.colorbar(sc, label="round rank (6=SF, 7=Final)")
 plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 7. Detector — FIFA leadership lens (exploratory)
+## 8. Detector — FIFA leadership lens (exploratory)
 
 The most speculative view: map each tournament to the FIFA president in office and ask whether
 over/under-performance clusters by era. **This is correlational and under-powered** — 22
@@ -264,7 +317,7 @@ tournaments across 7 presidents — so treat it as a conversation-starter, not a
 
 The honest result: host over-performance is *higher* in the early decades (when hosting carried a
 huge travel/familiarity edge) and *lower* under Blatter/Infantino. The "corruption-era host bias"
-hypothesis is **not** supported by the data.
+hypothesis is **not** supported.
 """)
 
 code(r"""
@@ -272,10 +325,10 @@ from worldcup_anomalies.leadership import (
     era_summary, host_overperformance, host_overperformance_permutation,
 )
 
-es = era_summary(data.tournaments, elo_matches, data.team_appearances, data.leadership)
+es = era_summary(data.tournaments, elo, data.team_appearances, data.leadership)
 display(es)
 
-ho = host_overperformance(data.tournaments, elo_matches, data.team_appearances, data.leadership)
+ho = host_overperformance(data.tournaments, elo, data.team_appearances, data.leadership)
 perm = host_overperformance_permutation(ho, ["João Havelange", "Sepp Blatter"], n_perm=20000)
 print("Permutation test — host over-performance in the Havelange+Blatter era vs the rest:")
 print(f"  observed difference: {perm['observed_diff']:+.2f} rounds   p = {perm['p_value']:.3f}")
@@ -292,24 +345,28 @@ plt.xticks(rotation=45, ha="right"); plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 8. Takeaways
+## 9. Takeaways
 
-- The screen **rediscovers known cases**, which is the point of validating it: the 1982 Gijón
-  match tops the convenient-result detector, the 2018 Germany and 2022 Saudi/Argentina shocks top
-  the upset detector, and the 2002 South Korea run (notorious for its officiating) surfaces near
-  the top of the combined table.
+- Using ratings grounded in **every international match since 1872** (not just World Cup games)
+  removes the cold-start artefact where debutants entered at a neutral 1500 — and it *sharpens*
+  the results: the upset list becomes the canonical shocks, and noisy host-performance flags drop
+  away.
+- The screen **rediscovers known cases**, which is the validation: 1982 Gijón tops the
+  convenient-result detector, Cameroon–Brazil 1990 and Saudi Arabia–Argentina 2022 top the upsets,
+  and the detector independently rediscovers that the Gijón pattern died with the 1986 simultaneity
+  rule.
 - The one **systemic signal with a real test behind it** is host card bias: hosts receive fewer
-  cards than their opponents about 69% of the time (sign-test p ≈ 0.01, BH q ≈ 0.06). Worth a
-  deeper, confounder-aware look — hosts are also often the stronger, more possession-dominant side.
-- Individual **referee card rates** vary far more than context explains (e.g. very card-happy vs
-  very lenient officials), with small-sample caveats — several survive BH correction.
+  cards than their opponents ~69% of the time (sign-test p ≈ 0.01, BH q ≈ 0.07). Worth a deeper,
+  confounder-aware look — hosts are also often the stronger, more possession-dominant side.
+- **Argentina is a counter-example, not a case:** its finalist runs rank among the *hardest* paths
+  (2022 harder than ~88% of all finalist runs), because it kept meeting elite teams from the
+  quarter-finals on. Soft *group* draws, brutal knockouts.
 - The **FIFA-leadership lens returns a null**: no era-clustering of host over-performance. Reported
   as-is, because a screen that only ever confirms its priors is worthless.
 
-**Caveats.** Elo is inferred from World Cup matches only (no qualifiers/friendlies), so early
-ratings are noisy. Card data starts in 1970. Above all this is a multiple-comparison screen: the
-q-values quantify how much of the apparent signal survives that. Treat every row as a lead, not a
-verdict.
+**Caveats.** Card data starts in 1970. Elo is still a summary of results only (no lineups/xG). Above
+all this is a multiple-comparison screen: the q-values quantify how much apparent signal survives.
+Treat every row as a lead, not a verdict.
 """)
 
 nb["cells"] = cells

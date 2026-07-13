@@ -21,8 +21,13 @@ the logic lives in the importable, testable package `worldcup_anomalies/`.
 
 - **Primary:** [`jfjelstul/worldcup`](https://github.com/jfjelstul/worldcup) normalized CSVs
   (matches, referees, bookings, goals, standings). Filtered to men's editions. Cards exist 1970+.
+- **Team strength:** an **Elo** rating. Two flavours share one engine:
+  - `intl_elo.py` (default) builds Elo over **every international match since 1872** —
+    friendlies, qualifiers, continental cups, World Cups — from
+    [`martj42/international_results`](https://github.com/martj42/international_results), so no team
+    is a blank 1500 on debut (Qatar 2022 enters ~1790, grounded in real qualifiers).
+  - `elo.py` builds a self-contained World-Cup-only Elo as a cross-check.
 - **FIFA leadership:** Wikipedia "List of presidents of FIFA" (with a hardcoded fallback table).
-- **Team strength:** an Elo engine computed in-repo over the match data (no external Elo dependency).
 
 ## Usage
 
