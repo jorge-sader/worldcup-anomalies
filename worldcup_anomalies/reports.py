@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .elo import pre_tournament_ratings
 from .fetch import WorldCupData
 
 # Stage ordering for laying a team's games out left-to-right.
@@ -114,13 +115,50 @@ def team_path(
                 opp_elo.append(mm["elo_home_pre"])
         rows["opponent_elo"] = opp_elo
 
+        # Opponent strength as a WITHIN-EDITION percentile (era-fair: raw Elo inflates over
+        # time). 100 = one of the strongest teams in that tournament.
+        pre = pre_tournament_ratings(elo_matches)
+        ed = pre[pre["tournament_id"] == tournament_id]
+        pct = (ed.set_index("team_id")["elo_pre"].rank(pct=True) * 100).to_dict()
+        rows["opponent_strength_pct"] = [pct.get(oid, np.nan) for oid in rows["opponent_id"]]
+
     cols = [
         "game_no", "stage_name", "stage_short", "opponent_name",
         "goals_for", "goals_against", "result",
     ]
     if "opponent_elo" in rows:
-        cols.append("opponent_elo")
+        cols += ["opponent_elo", "opponent_strength_pct"]
     return rows[cols].rename(columns={"opponent_name": "opponent", "stage_name": "stage"})
+
+
+def all_teams(data: WorldCupData) -> list[str]:
+    """Alphabetical list of every team that has appeared in a men's World Cup."""
+    return sorted(data.team_appearances["team_name"].unique())
+
+
+def team_history(
+    data: WorldCupData,
+    team_name: str,
+    elo_matches: pd.DataFrame | None = None,
+) -> list[tuple[str, pd.DataFrame]]:
+    """Every tournament a team played, oldest first, as ``(year_label, path)`` pairs.
+
+    Each ``path`` is the :func:`team_path` game-by-game frame for that edition. Feeds the
+    interactive "historical path strength" chart in the notebook.
+    """
+    appearances = data.team_appearances[data.team_appearances["team_name"] == team_name]
+    tids = (
+        appearances[["tournament_id"]]
+        .merge(data.tournaments[["tournament_id", "year"]], on="tournament_id")
+        .drop_duplicates()
+        .sort_values("year")
+    )
+    out = []
+    for r in tids.itertuples():
+        path = team_path(data, r.tournament_id, team_name, elo_matches)
+        if not path.empty:
+            out.append((str(int(r.year)), path))
+    return out
 
 
 def champions_paths(

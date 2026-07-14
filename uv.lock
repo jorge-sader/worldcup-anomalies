@@ -2177,6 +2177,7 @@ dev = [
 ]
 notebook = [
     { name = "ipykernel" },
+    { name = "ipywidgets" },
     { name = "jupyter" },
     { name = "nbconvert" },
 ]

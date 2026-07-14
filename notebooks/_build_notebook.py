@@ -115,64 +115,107 @@ display(
 md(r"""
 ### 2b. Road to the title — comparing champions' paths
 
-Each row is a champion; each column a game in order. **Colour = the opponent's pre-match Elo**
-(darker/redder = stronger opponent), so a glance shows which titles were won the hard way. The
-knockout rounds are boxed — blue = R16, orange = QF, red = SF/Final. This is the "path" view: it
-makes strength-of-schedule legible in a way a table of numbers can't.
+Each row is a champion; each column a game in order. **Colour = the opponent's strength as a
+*within-edition percentile*** (100 = one of the strongest teams that tournament) — an era-fair
+measure, since raw Elo inflates over the decades. The knockout rounds are boxed: blue = R16,
+orange = QF, red = SF/Final. This "path" view makes strength-of-schedule legible in a way a table
+of numbers can't — and the same helper drives the interactive team explorer just below.
 """)
 
 code(r"""
 import matplotlib.patches as mpatches
 
+STAGE_EDGE = {"R16": "#0072B2", "QF": "#E69F00", "SF": "#D55E00", "FIN": "#D55E00"}
+
+def plot_paths_grid(entries, title, row_h=0.62):
+    # entries: list of (row_label, path_df). Colour = opponent within-edition strength pct.
+    maxg = max(len(p) for _, p in entries)
+    nrows = len(entries)
+    E = np.full((nrows, maxg), np.nan)
+    labels = np.empty((nrows, maxg), dtype=object); labels[:] = ""
+    stages = np.empty((nrows, maxg), dtype=object); stages[:] = ""
+    ylabels = []
+    for i, (lab, p) in enumerate(entries):
+        ylabels.append(lab)
+        for r in p.itertuples():
+            E[i, r.game_no - 1] = r.opponent_strength_pct
+            labels[i, r.game_no - 1] = f"{r.opponent}\n{r.result[:1].upper()}"
+            stages[i, r.game_no - 1] = r.stage_short
+    fig, ax = plt.subplots(figsize=(1.5 * maxg + 3, max(2.6, row_h * nrows + 1)))
+    im = ax.imshow(E, cmap="YlOrRd", aspect="auto", vmin=0, vmax=100)
+    for i in range(nrows):
+        for j in range(maxg):
+            if not labels[i, j]:
+                continue
+            v = E[i, j]
+            tc = "white" if (not np.isnan(v) and v > 62) else "black"
+            ax.text(j, i, labels[i, j], ha="center", va="center", fontsize=7, color=tc)
+            edge = STAGE_EDGE.get(stages[i, j])
+            if edge:
+                lw = 3 if stages[i, j] in ("SF", "FIN") else 2
+                ax.add_patch(mpatches.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
+                                                edgecolor=edge, lw=lw))
+    ax.set_xticks(range(maxg)); ax.set_xticklabels([f"Game {k+1}" for k in range(maxg)])
+    ax.set_yticks(range(nrows)); ax.set_yticklabels(ylabels)
+    ax.set_title(title, fontsize=11)
+    cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cbar.set_label("opponent strength\n(within-edition pct)")
+    legend = [mpatches.Patch(edgecolor=c, facecolor="none", label=s, linewidth=2)
+              for s, c in [("R16", "#0072B2"), ("QF", "#E69F00"), ("SF / Final", "#D55E00")]]
+    ax.legend(handles=legend, loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=8)
+    plt.tight_layout()
+    return fig, ax
+
 champ_years = [1998, 2002, 2006, 2010, 2014, 2018, 2022]
-paths = {}
-maxg = 0
+champ_entries = []
 for yr in champ_years:
     row = data.tournaments[data.tournaments.year == yr]
     tid, champ = row.tournament_id.iloc[0], row.winner.iloc[0]
-    p = team_path(data, tid, champ, elo)
-    paths[(yr, champ)] = p
-    maxg = max(maxg, len(p))
-
-nrows = len(paths)
-E = np.full((nrows, maxg), np.nan)
-labels = np.empty((nrows, maxg), dtype=object); labels[:] = ""
-stages = np.empty((nrows, maxg), dtype=object); stages[:] = ""
-ylabels = []
-for i, ((yr, champ), p) in enumerate(paths.items()):
-    ylabels.append(f"{yr}  {champ}")
-    for r in p.itertuples():
-        E[i, r.game_no - 1] = r.opponent_elo
-        labels[i, r.game_no - 1] = f"{r.opponent}\n{r.result[:1].upper()}"
-        stages[i, r.game_no - 1] = r.stage_short
-
-fig, ax = plt.subplots(figsize=(13, 5))
-im = ax.imshow(E, cmap="YlOrRd", aspect="auto")
-stage_edge = {"R16": "#0072B2", "QF": "#E69F00", "SF": "#D55E00", "FIN": "#D55E00"}
-for i in range(nrows):
-    for j in range(maxg):
-        if not labels[i, j]:
-            continue
-        val = E[i, j]
-        tc = "white" if (not np.isnan(val) and val > np.nanmean(E) + 60) else "black"
-        ax.text(j, i, labels[i, j], ha="center", va="center", fontsize=7.5, color=tc)
-        edge = stage_edge.get(stages[i, j])
-        if edge:
-            lw = 3 if stages[i, j] in ("SF", "FIN") else 2
-            ax.add_patch(mpatches.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
-                                            edgecolor=edge, lw=lw))
-ax.set_xticks(range(maxg)); ax.set_xticklabels([f"Game {k+1}" for k in range(maxg)])
-ax.set_yticks(range(nrows)); ax.set_yticklabels(ylabels)
-ax.set_title("Road to the title — opponent by game (colour = opponent Elo)")
-cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02); cbar.set_label("opponent pre-match Elo")
-legend = [mpatches.Patch(edgecolor=c, facecolor="none", label=s, linewidth=2)
-          for s, c in [("R16", "#0072B2"), ("QF", "#E69F00"), ("SF / Final", "#D55E00")]]
-ax.legend(handles=legend, loc="upper left", bbox_to_anchor=(1.02, 1), fontsize=8)
-plt.tight_layout(); plt.show()
+    champ_entries.append((f"{yr}  {champ}", team_path(data, tid, champ, elo)))
+plot_paths_grid(champ_entries,
+                "Road to the title — colour = opponent strength (within-edition percentile)")
+plt.show()
 """)
 
 md(r"""
-### 2c. How the Elo is calculated — a worked example
+### 2c. Explore any team's historical path (interactive)
+
+Pick a team from the alphabetical dropdown to see **its** road through *every* World Cup it has
+played — one row per edition, same encoding as above (colour = opponent strength percentile,
+knockout rounds boxed). This is a team's historical strength-of-schedule at a glance: soft groups
+show up as pale left-hand cells, deep runs as long rows ending in red knockout boxes.
+
+*The dropdown needs a live kernel* (open in Colab, or run locally). On the static GitHub/nbviewer
+view, the **Argentina** default is rendered below as a still image; open in Colab to switch teams,
+or just call `show_team_history("Brazil")` in a cell.
+""")
+
+code(r"""
+import ipywidgets as widgets
+from worldcup_anomalies.reports import all_teams, team_history
+
+def show_team_history(team):
+    entries = team_history(data, team, elo)
+    if not entries:
+        print(f"{team}: no World Cup appearances on record."); return
+    plot_paths_grid(
+        entries,
+        f"{team} — every World Cup path (colour = opponent strength, within-edition percentile)",
+    )
+    plt.show()
+
+# Static default so the chart is visible even on non-interactive viewers (GitHub/nbviewer):
+show_team_history("Argentina")
+
+# Live dropdown (needs a running kernel — Colab or local Jupyter):
+widgets.interact(
+    show_team_history,
+    team=widgets.Dropdown(options=all_teams(data), value="Argentina", description="Team:"),
+);
+""")
+
+md(r"""
+### 2d. How the Elo is calculated — a worked example
 
 The rating is simple arithmetic applied after every match:
 
@@ -220,7 +263,7 @@ print("Argentina (heavy favourite) LOST to Saudi Arabia → a big negative Δ_ho
 """)
 
 md(r"""
-### 2d. Ratings over time
+### 2e. Ratings over time
 
 The full-history engine tracks every national team from 1872. Here are a few traditional powers —
 you can see eras rise and fade (Hungary's 1950s peak, Brazil's long dominance, Spain's late-2000s

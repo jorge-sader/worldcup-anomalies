@@ -2,7 +2,13 @@
 
 from worldcup_anomalies.fetch import load_data
 from worldcup_anomalies.intl_elo import annotate_world_cup, build_intl_elo, load_intl_results
-from worldcup_anomalies.reports import champions_paths, team_path, tournament_overview
+from worldcup_anomalies.reports import (
+    all_teams,
+    champions_paths,
+    team_history,
+    team_path,
+    tournament_overview,
+)
 
 
 def test_tournament_overview_shape_and_champions():
@@ -31,6 +37,27 @@ def test_team_path_order_and_opponents():
     assert path["opponent"].iloc[-1] == "France"        # the final
     assert path["stage_short"].iloc[-1] == "FIN"
     assert path["opponent_elo"].notna().all()
+
+
+def test_all_teams_sorted_and_complete():
+    d = load_data()
+    teams = all_teams(d)
+    assert teams == sorted(teams)          # alphabetical for the dropdown
+    assert "Argentina" in teams and "Brazil" in teams
+    assert len(teams) > 70
+
+
+def test_team_history_covers_all_appearances():
+    d = load_data()
+    em = annotate_world_cup(d.matches, build_intl_elo(load_intl_results()))
+    hist = team_history(d, "Brazil", em)
+    # Brazil has played every men's World Cup (22).
+    assert len(hist) == 22
+    years = [int(y) for y, _ in hist]
+    assert years == sorted(years)          # oldest first
+    # Each path carries the era-fair opponent-strength percentile used for colour.
+    for _, path in hist:
+        assert path["opponent_strength_pct"].between(0, 100).all()
 
 
 def test_champions_paths_matrix():

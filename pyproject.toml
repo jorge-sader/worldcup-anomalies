@@ -17,6 +17,7 @@ dependencies = [
 notebook = [
     "jupyter>=1.0",
     "ipykernel>=6.29",
+    "ipywidgets>=8.1",
     "nbconvert>=7.16",
 ]
 dev = [
