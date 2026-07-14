@@ -111,7 +111,8 @@ md(r"""
 ### 2a. Every World Cup at a glance
 
 Hosts, field size, games, penalty shootouts, cards, and the top-four finishers. Card columns are
-**0 before 1970** — booking data simply does not exist further back.
+**0 before 1970** — booking data simply does not exist further back. The in-progress **2026**
+edition is tracked separately in §2f (it uses a different, live source and the new 48-team format).
 """)
 
 code(r"""
@@ -141,7 +142,8 @@ of numbers can't — and the same helper drives the interactive team explorer ju
 code(r"""
 import matplotlib.patches as mpatches
 
-STAGE_EDGE = {"R16": "#0072B2", "QF": "#E69F00", "SF": "#D55E00", "FIN": "#D55E00"}
+STAGE_EDGE = {"R32": "#56B4E9", "R16": "#0072B2", "QF": "#E69F00",
+              "SF": "#D55E00", "FIN": "#D55E00"}
 
 def plot_paths_grid(entries, title, row_h=0.62):
     # entries: list of (row_label, path_df). Colour = opponent within-edition strength pct.
@@ -213,10 +215,20 @@ in); open in Colab to switch teams, or just call `show_team_history("Brazil")` i
 
 code(r"""
 import ipywidgets as widgets
-from worldcup_anomalies.reports import all_teams, team_history
+from worldcup_anomalies.reports import all_teams, team_history, canonical_name
+from worldcup_anomalies.worldcup_2026 import (
+    load_2026, pre_tournament_strength_2026, team_path_2026,
+)
+
+# The in-progress 2026 edition (results-only) is appended as a final row where applicable.
+m2026 = load_2026()
+pct2026 = pre_tournament_strength_2026(elo_timeline, m2026)
+teams2026 = set(m2026["home_team"]) | set(m2026["away_team"])
 
 def show_team_history(team):
     entries = team_history(data, team, elo)
+    if canonical_name(team) in teams2026:
+        entries.append(("2026 · in progress", team_path_2026(m2026, team, pct2026)))
     if not entries:
         print(f"{team}: no World Cup appearances on record."); return
     plot_paths_grid(
@@ -228,10 +240,11 @@ def show_team_history(team):
 # Static default so the chart is visible even on non-interactive viewers (GitHub/nbviewer):
 show_team_history("Germany")
 
-# Live dropdown (needs a running kernel — Colab or local Jupyter):
+# Live dropdown (needs a running kernel — Colab or local Jupyter); includes 2026 debutants:
 widgets.interact(
     show_team_history,
-    team=widgets.Dropdown(options=all_teams(data), value="Germany", description="Team:"),
+    team=widgets.Dropdown(options=sorted(set(all_teams(data)) | teams2026),
+                          value="Germany", description="Team:"),
 );
 """)
 
@@ -305,6 +318,55 @@ ax.axhline(1500, color="k", lw=0.6, ls="--", alpha=0.5)
 ax.set_xlabel("year"); ax.set_ylabel("Elo rating (full international history)")
 ax.set_title("How team strength evolves — full-history Elo, 1920–2022")
 ax.legend(ncol=4, fontsize=8); plt.tight_layout(); plt.show()
+""")
+
+md(r"""
+### 2f. The 2026 World Cup — live tracker (in progress)
+
+A bonus view of the tournament being played *right now*. This comes from the live-updated
+`martj42/international_results` feed (not the jfjelstul dataset, which ends at 2022) and is
+**results-only**: no referee or card data exists yet, standings aren't final, and it's the first
+**48-team** edition (12 groups → round of 32 → …). For those reasons it is kept **out of the
+anomaly detectors** — the historical formats they assume don't apply. Stages are inferred from the
+fixed bracket; re-run to refresh as later rounds are played.
+""")
+
+code(r"""
+from worldcup_anomalies.worldcup_2026 import (
+    load_2026, summary_2026, quarterfinalists_2026,
+    pre_tournament_strength_2026, team_path_2026,
+)
+
+m26 = load_2026()
+s26 = summary_2026(m26)
+print(f"2026 World Cup — {s26['games_played']}/{s26['games_total']} games played; "
+      f"latest completed round: {s26['latest_stage']}.")
+print(f"Advanced from the {s26['latest_stage']}: {', '.join(s26['advanced_from_latest'])}")
+
+# A tournaments-table-style row for 2026 (standings still TBD).
+row26 = pd.DataFrame([{
+    "Year": 2026, "Host": "Canada · Mexico · USA", "Teams": s26["teams"],
+    "Games (played)": s26["games_played"], "Cards": "—  (no data yet)",
+    "Status": f"in progress — {s26['latest_stage']}",
+}])
+display(row26.style.hide(axis="index"))
+""")
+
+code(r"""
+# The deepest 2026 runs (teams that reached the quarter-finals), same path encoding as above.
+pct26 = pre_tournament_strength_2026(elo_timeline, m26)
+qf26 = quarterfinalists_2026(m26)
+entries26 = [(t, team_path_2026(m26, t, pct26)) for t in qf26]
+entries26.sort(key=lambda e: e[1]["opponent_strength_pct"].mean())  # easiest schedule first
+plot_paths_grid(
+    entries26,
+    "2026 quarter-finalists' paths so far (colour = opponent strength, within-edition percentile)",
+)
+plt.show()
+print("Read like the champions chart above — pale rows = soft schedules. The pattern from 2014 "
+      "and 2022 recurs: Argentina's 2026 route so far is the palest of all eight quarter-finalists "
+      "(lowest mean opponent strength) — a soft draw again, worth revisiting once the draw-luck "
+      "Monte-Carlo can be run on the completed 48-team bracket.")
 """)
 
 md(r"""

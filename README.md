@@ -53,6 +53,10 @@ booking data does not exist that far back. "Shootouts" counts games decided on p
 | 2018 | Russia | 32 | 64 | 4 | 221 | 4 | England | Belgium | Croatia | France |
 | 2022 | Qatar | 32 | 64 | 5 | 224 | 4 | Morocco | Croatia | France | Argentina |
 
+The **2026** edition (48 teams, in progress) is tracked separately in the notebook (§2f) from the
+live `martj42/international_results` feed — results-only, kept out of the detectors while the
+tournament is unfinished and lacks referee/card data. `worldcup_anomalies.worldcup_2026`.
+
 ## Data sources
 
 - **Primary:** [`jfjelstul/worldcup`](https://github.com/jfjelstul/worldcup) normalized CSVs
