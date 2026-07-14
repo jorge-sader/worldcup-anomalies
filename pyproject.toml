@@ -3,7 +3,7 @@ name = "worldcup-anomalies"
 version = "0.1.0"
 description = "Auto-fetch men's FIFA World Cup data (1930-2022) and flag statistical irregularities worth looking into."
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.2",
     "numpy>=1.26",

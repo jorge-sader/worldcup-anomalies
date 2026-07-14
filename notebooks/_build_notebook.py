@@ -41,6 +41,22 @@ cross-check.
 """)
 
 code(r"""
+# --- Environment bootstrap ---------------------------------------------------------
+# This notebook imports the `worldcup_anomalies` package. Locally it's installed via uv;
+# on Colab (or any fresh kernel) it isn't present, so install it straight from GitHub.
+try:
+    import worldcup_anomalies  # noqa: F401
+except ModuleNotFoundError:
+    import subprocess, sys
+    subprocess.check_call([
+        sys.executable, "-m", "pip", "install", "-q",
+        "git+https://github.com/jorge-sader/worldcup-anomalies.git",
+    ])
+    import worldcup_anomalies  # noqa: F401
+print("worldcup_anomalies is ready — data is fetched from the web on first use.")
+""")
+
+code(r"""
 %matplotlib inline
 import matplotlib.pyplot as plt
 import numpy as np
