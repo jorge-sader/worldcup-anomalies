@@ -1,6 +1,8 @@
 # World Cup Statistical Irregularities
 
-[![View the notebook](https://img.shields.io/badge/notebook-nbviewer-F37626?logo=jupyter&logoColor=white)](https://nbviewer.org/github/jorge-sader/worldcup-anomalies/blob/main/notebooks/world_cup_irregularities.ipynb)
+[![View on GitHub](https://img.shields.io/badge/notebook-view%20on%20GitHub-24292e?logo=github&logoColor=white)](https://github.com/jorge-sader/worldcup-anomalies/blob/main/notebooks/world_cup_irregularities.ipynb)
+[![Open in Colab](https://img.shields.io/badge/notebook-open%20in%20Colab-F9AB00?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/jorge-sader/worldcup-anomalies/blob/main/notebooks/world_cup_irregularities.ipynb)
+[![View on nbviewer](https://img.shields.io/badge/notebook-nbviewer-F37626?logo=jupyter&logoColor=white)](https://nbviewer.org/github/jorge-sader/worldcup-anomalies/blob/main/notebooks/world_cup_irregularities.ipynb)
 
 Auto-fetches all **men's** FIFA World Cup data (1930–2022) — matches, scores, phases, referees,
 bookings — plus a FIFA-leadership table, and runs statistical models that surface **irregularities
