@@ -22,6 +22,37 @@ the logic lives in the importable, testable package `worldcup_anomalies/`.
    rivals clustered elsewhere). Only Brazil 2002 matches the full signature 1954–2022.
 6. **FIFA-leadership correlation** — anomaly rates by FIFA-president era (exploratory, caveated).
 
+## Tournaments at a glance
+
+Every men's World Cup — hosts, field size, games, penalty shootouts, cards, and the top-four
+finishers (`worldcup_anomalies.reports.tournament_overview`). Card columns are **0 before 1970**:
+booking data does not exist that far back. "Shootouts" counts games decided on penalties.
+
+| Year | Host | Teams | Games | Shootouts | Yellow | Red | 4th | 3rd | 2nd | 1st |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1930 | Uruguay | 13 | 18 | 0 | 0 | 0 | Yugoslavia | United States | Argentina | Uruguay |
+| 1934 | Italy | 16 | 17 | 0 | 0 | 0 | Austria | Germany | Czechoslovakia | Italy |
+| 1938 | France | 15 | 18 | 0 | 0 | 0 | Sweden | Brazil | Hungary | Italy |
+| 1950 | Brazil | 13 | 22 | 0 | 0 | 0 | Spain | Sweden | Brazil | Uruguay |
+| 1954 | Switzerland | 16 | 26 | 0 | 0 | 0 | Uruguay | Austria | Hungary | West Germany |
+| 1958 | Sweden | 16 | 35 | 0 | 0 | 0 | West Germany | France | Sweden | Brazil |
+| 1962 | Chile | 16 | 32 | 0 | 0 | 0 | Yugoslavia | Chile | Czechoslovakia | Brazil |
+| 1966 | England | 16 | 32 | 0 | 0 | 0 | Soviet Union | Portugal | West Germany | England |
+| 1970 | Mexico | 16 | 32 | 0 | 52 | 0 | Uruguay | West Germany | Italy | Brazil |
+| 1974 | West Germany | 16 | 38 | 0 | 87 | 5 | Brazil | Poland | Netherlands | West Germany |
+| 1978 | Argentina | 16 | 38 | 0 | 46 | 3 | Italy | Brazil | Netherlands | Argentina |
+| 1982 | Spain | 24 | 52 | 1 | 99 | 5 | France | Poland | West Germany | Italy |
+| 1986 | Mexico | 24 | 52 | 3 | 138 | 8 | Belgium | France | West Germany | Argentina |
+| 1990 | Italy | 24 | 52 | 4 | 169 | 16 | England | Italy | Argentina | West Germany |
+| 1994 | United States | 24 | 52 | 3 | 228 | 15 | Bulgaria | Sweden | Italy | Brazil |
+| 1998 | France | 32 | 64 | 3 | 254 | 22 | Netherlands | Croatia | Brazil | France |
+| 2002 | Korea, Japan | 32 | 64 | 2 | 266 | 17 | South Korea | Turkey | Germany | Brazil |
+| 2006 | Germany | 32 | 64 | 4 | 326 | 28 | Portugal | Germany | France | Italy |
+| 2010 | South Africa | 32 | 64 | 2 | 254 | 17 | Uruguay | Germany | Netherlands | Spain |
+| 2014 | Brazil | 32 | 64 | 4 | 184 | 10 | Brazil | Netherlands | Argentina | Germany |
+| 2018 | Russia | 32 | 64 | 4 | 221 | 4 | England | Belgium | Croatia | France |
+| 2022 | Qatar | 32 | 64 | 5 | 224 | 4 | Morocco | Croatia | France | Argentina |
+
 ## Data sources
 
 - **Primary:** [`jfjelstul/worldcup`](https://github.com/jfjelstul/worldcup) normalized CSVs
