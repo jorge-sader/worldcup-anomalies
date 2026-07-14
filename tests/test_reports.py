@@ -44,13 +44,14 @@ def test_all_teams_sorted_and_merged():
     teams = all_teams(d)
     assert teams == sorted(teams)          # alphabetical for the dropdown
     assert "Argentina" in teams and "Brazil" in teams
-    # Historical names are folded into continuous entries...
-    for merged in ["West Germany", "Soviet Union", "Yugoslavia",
-                   "Serbia and Montenegro", "Czechoslovakia"]:
+    # Only same-nation successor names are folded in...
+    for merged in ["West Germany", "Soviet Union", "Serbia and Montenegro"]:
         assert merged not in teams
-    for canon in ["Germany", "Russia", "Serbia", "Czech Republic"]:
+    for canon in ["Germany", "Russia", "Serbia"]:
         assert canon in teams
-    assert "East Germany" in teams         # ...but East Germany stays separate
+    # ...East Germany, Yugoslavia and Czechoslovakia stay as their own entries.
+    for kept in ["East Germany", "Yugoslavia", "Czechoslovakia"]:
+        assert kept in teams
 
 
 def test_team_history_covers_all_appearances():
@@ -74,8 +75,11 @@ def test_team_history_merges_predecessors():
     # Continuous: pre-war Germany + West Germany years + unified Germany.
     assert any("West Germany" in lab for lab in labels)
     assert labels[0].startswith("1934") and labels[-1].startswith("2022")
+    # Serbia folds in Serbia and Montenegro, but NOT Yugoslavia (kept separate).
     serbia = team_history(d, "Serbia", em)
-    assert any("Yugoslavia" in lab for lab, _ in serbia)
+    slabels = [lab for lab, _ in serbia]
+    assert any("Serbia and Montenegro" in lab for lab in slabels)
+    assert not any("Yugoslavia" in lab for lab in slabels)
 
 
 def test_champions_paths_matrix():

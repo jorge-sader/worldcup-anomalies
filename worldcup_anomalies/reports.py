@@ -131,16 +131,15 @@ def team_path(
     return rows[cols].rename(columns={"opponent_name": "opponent", "stage_name": "stage"})
 
 
-# Historical names folded into a single continuous national team, as football record-keeping
-# conventionally treats them (FIFA/UEFA successor lineages). East Germany (German DR) is kept
-# separate — its record is not merged into unified Germany. Display-only: team_ids are untouched,
-# so no rating or detector result changes.
+# Historical names folded into a single continuous national team — only the clear same-nation
+# successor cases. Yugoslavia and Czechoslovakia are kept SEPARATE (treated as distinct nations,
+# not predecessors of Serbia / the Czech Republic). East Germany (German DR) also stays separate —
+# its record is not merged into unified Germany. Display-only: team_ids are untouched, so no rating
+# or detector result changes.
 CANONICAL_TEAM = {
     "West Germany": "Germany",
     "Soviet Union": "Russia",
-    "Yugoslavia": "Serbia",
     "Serbia and Montenegro": "Serbia",
-    "Czechoslovakia": "Czech Republic",
 }
 
 

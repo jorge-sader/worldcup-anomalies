@@ -185,10 +185,10 @@ played — one row per edition, same encoding as above (colour = opponent streng
 knockout rounds boxed). This is a team's historical strength-of-schedule at a glance: soft groups
 show up as pale left-hand cells, deep runs as long rows ending in red knockout boxes.
 
-Historical names are folded into **continuous entries** (FIFA successor lineages): "Germany"
-spans its West Germany years, "Serbia" folds in Yugoslavia and Serbia & Montenegro, "Russia" the
-Soviet Union, "Czech Republic" Czechoslovakia — each row still labelled with the name used in that
-era (e.g. `1974 · West Germany`). East Germany is kept separate.
+Same-nation successor names are folded into **continuous entries**: "Germany" spans its West
+Germany years, "Russia" the Soviet Union, "Serbia" folds in Serbia & Montenegro — each row still
+labelled with the name used in that era (e.g. `1974 · West Germany`). East Germany, Yugoslavia and
+Czechoslovakia are kept as their own separate entries.
 
 *The dropdown needs a live kernel* (open in Colab, or run locally). On the static GitHub/nbviewer
 view, the **Germany** default is rendered below as a still image (note the West Germany rows folded
