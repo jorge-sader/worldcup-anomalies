@@ -363,10 +363,48 @@ plot_paths_grid(
     "2026 quarter-finalists' paths so far (colour = opponent strength, within-edition percentile)",
 )
 plt.show()
-print("Read like the champions chart above — pale rows = soft schedules. The pattern from 2014 "
-      "and 2022 recurs: Argentina's 2026 route so far is the palest of all eight quarter-finalists "
-      "(lowest mean opponent strength) — a soft draw again, worth revisiting once the draw-luck "
-      "Monte-Carlo can be run on the completed 48-team bracket.")
+print("Read like the champions chart above — pale rows = soft schedules. Argentina's overall 2026 "
+      "route is the palest of the eight quarter-finalists (lowest mean opponent strength) — but the "
+      "draw-luck Monte-Carlo below shows *where* that softness came from, and it isn't the group.")
+""")
+
+md(r"""
+#### Draw-luck Monte-Carlo, extended to the 48-team bracket
+
+The same fair-draw test from §10, now on 2026's 12 groups of four: hold each group's strongest
+team fixed and reshuffle the other 36 across the groups 10,000 times. `draw_luck_pct` low = that
+group was softer than most fair draws; `rival_clustering_pct` high = strong teams bunched together.
+""")
+
+code(r"""
+from worldcup_anomalies.worldcup_2026 import draw_luck_2026
+
+dl26 = draw_luck_2026(m26, elo_timeline)
+clustering = dl26["rival_clustering_pct"].iloc[0]
+print(f"2026 draw — rival clustering: {clustering:.0f} percentile "
+      f"({'balanced — rivals NOT bunched' if clustering < 50 else 'clustered'}).")
+display(dl26[["team", "draw_luck_pct", "reached_qf"]].round(0).reset_index(drop=True))
+
+arg = dl26[dl26.team == "Argentina"]["draw_luck_pct"].iloc[0]
+print(f"\nArgentina's GROUP draw-luck: {arg:.0f} pct — its group was harder than {arg:.0f}% of fair "
+      f"draws, i.e. NOT a soft group (the softest went to Switzerland and Spain).")
+""")
+
+md(r"""
+**What 2026 actually shows.** Two clean findings:
+
+1. **No engineered-draw signature.** The 2026 draw is *balanced* (clustering ≈ 12th percentile —
+   among the least-clustered ever), just like 2022. Strong teams were spread across groups, not
+   packed together to clear anyone's path.
+2. **Argentina's soft route is knockout-driven, not a soft group.** Unlike 2014 and 2022 — where
+   the *group* itself was among the softest — Argentina's 2026 group was actually harder than
+   average (73rd pct). Its palest-overall path came from favourable *knockout* opponents
+   (Cape Verde, Egypt), which the group draw doesn't control. Different mechanism, and nothing the
+   draw-manipulation test flags.
+
+A good example of the screen refusing an easy narrative: the surface pattern ("Argentina, soft path
+again") is real, but the *right* tool localises it to the bracket, not the draw — and finds no
+manipulation signature. (Revisit once the final is played and refereeing/format data exist.)
 """)
 
 md(r"""

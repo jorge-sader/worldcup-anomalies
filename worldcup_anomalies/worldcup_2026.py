@@ -63,12 +63,8 @@ def load_2026(*, refresh: bool = False) -> pd.DataFrame:
     return w
 
 
-def pre_tournament_strength_2026(elo_timeline: dict, matches_2026: pd.DataFrame) -> dict:
-    """Each 2026 team's within-tournament strength percentile from its entering Elo.
-
-    Returns ``{team: percentile}`` (0–100, 100 = strongest of the 48), computed from each team's
-    full-history Elo just before the tournament began.
-    """
+def entering_ratings_2026(elo_timeline: dict, matches_2026: pd.DataFrame) -> dict:
+    """Each 2026 team's full-history Elo just before the tournament began (``{team: rating}``)."""
     teams = set(matches_2026["home_team"]) | set(matches_2026["away_team"])
     ratings = {}
     for t in teams:
@@ -79,8 +75,89 @@ def pre_tournament_strength_2026(elo_timeline: dict, matches_2026: pd.DataFrame)
         dates, vals = tl
         idx = int(np.searchsorted(dates, TOURNAMENT_START, side="left"))
         ratings[t] = float(vals[idx - 1]) if idx > 0 else 1500.0
-    s = pd.Series(ratings)
+    return ratings
+
+
+def pre_tournament_strength_2026(elo_timeline: dict, matches_2026: pd.DataFrame) -> dict:
+    """Each 2026 team's within-tournament strength percentile from its entering Elo.
+
+    Returns ``{team: percentile}`` (0–100, 100 = strongest of the 48).
+    """
+    s = pd.Series(entering_ratings_2026(elo_timeline, matches_2026))
     return (s.rank(pct=True) * 100).to_dict()
+
+
+def group_membership_2026(matches_2026: pd.DataFrame) -> pd.DataFrame:
+    """Reconstruct the 12 groups from the group-stage matches: columns ``group, team``.
+
+    In the 48-team format each team plays its three group-mates, so a team plus its group-stage
+    opponents is exactly its group of four.
+    """
+    gs = matches_2026[matches_2026["stage"] == "group stage"]
+    opponents: dict[str, set] = {}
+    for r in gs.itertuples():
+        opponents.setdefault(r.home_team, set()).add(r.away_team)
+        opponents.setdefault(r.away_team, set()).add(r.home_team)
+    groups = {frozenset({t} | opps) for t, opps in opponents.items()}
+    rows = []
+    for i, grp in enumerate(sorted(groups, key=lambda s: sorted(s))):
+        label = f"Group {chr(65 + i)}"
+        rows.extend({"group": label, "team": t} for t in sorted(grp))
+    return pd.DataFrame(rows)
+
+
+def draw_luck_2026(
+    matches_2026: pd.DataFrame,
+    elo_timeline: dict,
+    *,
+    n_sims: int = 10000,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """Fair-draw Monte-Carlo on the 48-team bracket (12 groups of 4).
+
+    Same method as :func:`worldcup_anomalies.draw.draw_monte_carlo`: hold each group's strongest
+    team fixed (the one seeding guarantee) and reshuffle the other 36 teams across the 12 groups
+    thousands of times. Returns one row per group anchor with ``draw_luck_pct`` (low = its group
+    was softer than most fair draws) and the shared ``rival_clustering_pct`` (high = strong teams
+    bunched together more than random). Also flags whether the anchor reached the quarter-finals.
+    """
+    gm = group_membership_2026(matches_2026)
+    ratings = entering_ratings_2026(elo_timeline, matches_2026)
+    gm = gm.assign(elo=gm["team"].map(ratings)).reset_index(drop=True)
+
+    groups = sorted(gm["group"].unique())
+    ng = len(groups)
+    sizes = gm.groupby("group").size()
+    gsize = int(sizes.iloc[0])
+    if sizes.nunique() != 1:
+        raise ValueError("2026 groups are not uniform in size")
+
+    anchor_idx = gm.groupby("group")["elo"].idxmax()
+    g_anchor = gm.loc[anchor_idx].set_index("group")
+    anchor_elo = np.array([g_anchor.loc[gr, "elo"] for gr in groups])
+    anchor_team = {gr: g_anchor.loc[gr, "team"] for gr in groups}
+    gtot = gm.groupby("group")["elo"].sum().reindex(groups).to_numpy()
+    actual_var = gtot.var()
+    actual_nonanchor = gtot - anchor_elo
+    pool = gm.loc[~gm.index.isin(anchor_idx), "elo"].to_numpy()
+
+    rng = np.random.default_rng(seed)
+    perm = np.argsort(rng.random((n_sims, pool.size)), axis=1)
+    vals = pool[perm].reshape(n_sims, ng, gsize - 1).sum(axis=2)
+    null_var = (vals + anchor_elo[None, :]).var(axis=1)
+    rival_clustering_pct = float((null_var <= actual_var).mean() * 100)
+
+    qf = set(quarterfinalists_2026(matches_2026))
+    rows = []
+    for i, gr in enumerate(groups):
+        rows.append({
+            "group": gr,
+            "team": anchor_team[gr],
+            "draw_luck_pct": float((vals[:, i] <= actual_nonanchor[i]).mean() * 100),
+            "rival_clustering_pct": rival_clustering_pct,
+            "reached_qf": anchor_team[gr] in qf,
+        })
+    return pd.DataFrame(rows).sort_values("draw_luck_pct").reset_index(drop=True)
 
 
 def team_path_2026(

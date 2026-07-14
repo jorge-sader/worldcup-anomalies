@@ -2,6 +2,8 @@
 
 from worldcup_anomalies.intl_elo import build_intl_elo, load_intl_results
 from worldcup_anomalies.worldcup_2026 import (
+    draw_luck_2026,
+    group_membership_2026,
     load_2026,
     pre_tournament_strength_2026,
     quarterfinalists_2026,
@@ -39,3 +41,18 @@ def test_team_path_schema_matches_plotter():
         assert col in path.columns
     assert path["opponent_strength_pct"].between(0, 100).all()
     assert list(path["game_no"]) == list(range(1, len(path) + 1))
+
+
+def test_draw_luck_2026_on_48_team_bracket():
+    m = load_2026()
+    gm = group_membership_2026(m)
+    # 12 groups of exactly 4 reconstructed from the group-stage matches.
+    assert gm["group"].nunique() == 12
+    assert (gm.groupby("group").size() == 4).all()
+
+    from worldcup_anomalies.intl_elo import build_intl_elo, load_intl_results
+    dl = draw_luck_2026(m, build_intl_elo(load_intl_results()), n_sims=3000, seed=0)
+    assert len(dl) == 12                                  # one anchor per group
+    assert dl["draw_luck_pct"].between(0, 100).all()
+    assert dl["rival_clustering_pct"].between(0, 100).all()
+    assert (dl["rival_clustering_pct"].nunique() == 1)    # edition-level, constant
