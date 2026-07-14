@@ -31,6 +31,7 @@ BASE_URL = "https://raw.githubusercontent.com/jfjelstul/worldcup/master/data-csv
 TABLES = (
     "tournaments",
     "tournament_stages",
+    "tournament_standings",
     "matches",
     "goals",
     "penalty_kicks",
@@ -47,6 +48,7 @@ TABLES = (
 _EVENT_TABLES = {
     "tournaments",
     "tournament_stages",
+    "tournament_standings",
     "matches",
     "goals",
     "penalty_kicks",
@@ -158,6 +160,7 @@ class WorldCupData:
 
     tournaments: pd.DataFrame
     tournament_stages: pd.DataFrame
+    tournament_standings: pd.DataFrame
     matches: pd.DataFrame
     goals: pd.DataFrame
     penalty_kicks: pd.DataFrame
@@ -200,6 +203,7 @@ def load_data(*, refresh: bool = False, try_web_leadership: bool = False) -> Wor
     return WorldCupData(
         tournaments=raw["tournaments"],
         tournament_stages=raw["tournament_stages"],
+        tournament_standings=raw["tournament_standings"],
         matches=raw["matches"],
         goals=raw["goals"],
         penalty_kicks=raw["penalty_kicks"],

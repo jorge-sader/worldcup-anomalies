@@ -61,7 +61,8 @@ from worldcup_anomalies.intl_elo import load_intl_results, build_intl_elo, annot
 
 data = load_data()                                  # men's-only, cached under data/raw/
 elo_wc = compute_elo(data.matches)                  # self-contained World-Cup-only Elo
-elo = annotate_world_cup(data.matches, build_intl_elo(load_intl_results()))  # grounded, primary
+elo_timeline = build_intl_elo(load_intl_results())  # full-history Elo, per-team over 1872–2026
+elo = annotate_world_cup(data.matches, elo_timeline)  # grounded ratings per WC match (primary)
 print("Loaded data and computed both World-Cup-only and full-history Elo ratings.")
 """)
 
@@ -83,7 +84,167 @@ print(f"Card data: {card_years.min()}–{card_years.max()}  |  {len(data.referee
 """)
 
 md(r"""
-## 2. Team strength: World-Cup-only vs full international history
+## 2. General context: tournaments, paths, and how the Elo works
+
+Before the anomaly detectors, three orienting views: a reference table of every World Cup, a
+visual comparison of how hard each champion's road to the title was, and a plain-language primer
+on the Elo rating that drives everything downstream.
+""")
+
+md(r"""
+### 2a. Every World Cup at a glance
+
+Hosts, field size, games, penalty shootouts, cards, and the top-four finishers. Card columns are
+**0 before 1970** — booking data simply does not exist further back.
+""")
+
+code(r"""
+from worldcup_anomalies.reports import tournament_overview, team_path, champions_paths
+
+overview = tournament_overview(data)
+display(
+    overview.style
+    .format({"teams": "{:.0f}", "games": "{:.0f}", "penalty_shootouts": "{:.0f}",
+             "yellow": "{:.0f}", "red": "{:.0f}"})
+    .background_gradient(subset=["games", "yellow", "red"], cmap="Blues")
+    .set_caption("Men's FIFA World Cups, 1930–2022")
+    .hide(axis="index")
+)
+""")
+
+md(r"""
+### 2b. Road to the title — comparing champions' paths
+
+Each row is a champion; each column a game in order. **Colour = the opponent's pre-match Elo**
+(darker/redder = stronger opponent), so a glance shows which titles were won the hard way. The
+knockout rounds are boxed — blue = R16, orange = QF, red = SF/Final. This is the "path" view: it
+makes strength-of-schedule legible in a way a table of numbers can't.
+""")
+
+code(r"""
+import matplotlib.patches as mpatches
+
+champ_years = [1998, 2002, 2006, 2010, 2014, 2018, 2022]
+paths = {}
+maxg = 0
+for yr in champ_years:
+    row = data.tournaments[data.tournaments.year == yr]
+    tid, champ = row.tournament_id.iloc[0], row.winner.iloc[0]
+    p = team_path(data, tid, champ, elo)
+    paths[(yr, champ)] = p
+    maxg = max(maxg, len(p))
+
+nrows = len(paths)
+E = np.full((nrows, maxg), np.nan)
+labels = np.empty((nrows, maxg), dtype=object); labels[:] = ""
+stages = np.empty((nrows, maxg), dtype=object); stages[:] = ""
+ylabels = []
+for i, ((yr, champ), p) in enumerate(paths.items()):
+    ylabels.append(f"{yr}  {champ}")
+    for r in p.itertuples():
+        E[i, r.game_no - 1] = r.opponent_elo
+        labels[i, r.game_no - 1] = f"{r.opponent}\n{r.result[:1].upper()}"
+        stages[i, r.game_no - 1] = r.stage_short
+
+fig, ax = plt.subplots(figsize=(13, 5))
+im = ax.imshow(E, cmap="YlOrRd", aspect="auto")
+stage_edge = {"R16": "#0072B2", "QF": "#E69F00", "SF": "#D55E00", "FIN": "#D55E00"}
+for i in range(nrows):
+    for j in range(maxg):
+        if not labels[i, j]:
+            continue
+        val = E[i, j]
+        tc = "white" if (not np.isnan(val) and val > np.nanmean(E) + 60) else "black"
+        ax.text(j, i, labels[i, j], ha="center", va="center", fontsize=7.5, color=tc)
+        edge = stage_edge.get(stages[i, j])
+        if edge:
+            lw = 3 if stages[i, j] in ("SF", "FIN") else 2
+            ax.add_patch(mpatches.Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
+                                            edgecolor=edge, lw=lw))
+ax.set_xticks(range(maxg)); ax.set_xticklabels([f"Game {k+1}" for k in range(maxg)])
+ax.set_yticks(range(nrows)); ax.set_yticklabels(ylabels)
+ax.set_title("Road to the title — opponent by game (colour = opponent Elo)")
+cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02); cbar.set_label("opponent pre-match Elo")
+legend = [mpatches.Patch(edgecolor=c, facecolor="none", label=s, linewidth=2)
+          for s, c in [("R16", "#0072B2"), ("QF", "#E69F00"), ("SF / Final", "#D55E00")]]
+ax.legend(handles=legend, loc="upper left", bbox_to_anchor=(1.02, 1), fontsize=8)
+plt.tight_layout(); plt.show()
+""")
+
+md(r"""
+### 2c. How the Elo is calculated — a worked example
+
+The rating is simple arithmetic applied after every match:
+
+1. **Expected result** from the rating gap: `E = 1 / (1 + 10^((opp − you)/400))` — level ratings
+   give `E = 0.5`; a 400-point edge gives ≈ 0.91.
+2. **Actual result**: win = 1, draw = 0.5, loss = 0.
+3. **Margin multiplier** `G`: 1 for a 1-goal win, 1.5 for 2, `(11+margin)/8` for 3+.
+4. **Update**: `Δ = K · G · (actual − expected)` with `K = 40`; you gain Δ, the opponent loses it.
+
+Below, three real matches worked end to end (World-Cup-only Elo, so numbers sit near the 1500
+baseline and are easy to follow). Note how an upset moves ratings far more than an expected result.
+""")
+
+code(r"""
+from worldcup_anomalies.elo import _gd_multiplier, K_FACTOR
+
+def work_match(match_name, year):
+    tid = data.tournaments[data.tournaments.year == year].tournament_id.iloc[0]
+    sel = elo_wc[(elo_wc.tournament_id == tid) & (elo_wc.match_name == match_name)]
+    assert len(sel) == 1, f"match not found: {match_name} ({year})"
+    r = sel.iloc[0]
+    exp_h = r.elo_prob_home
+    actual_h = 1.0 if r.home_team_score > r.away_team_score else (
+        0.0 if r.home_team_score < r.away_team_score else 0.5)
+    mult = _gd_multiplier(r.home_team_score - r.away_team_score)
+    delta = K_FACTOR * mult * (actual_h - exp_h)
+    return {
+        "match": f"{match_name} ({year})",
+        "score": f"{int(r.home_team_score)}–{int(r.away_team_score)}",
+        "home_pre": round(r.elo_home_pre), "away_pre": round(r.elo_away_pre),
+        "P(home)": round(exp_h, 2), "actual": actual_h, "G(margin)": mult,
+        "Δ_home": round(delta, 1),
+        "home_post": round(r.elo_home_pre + delta), "away_post": round(r.elo_away_pre - delta),
+    }
+
+worked = pd.DataFrame([
+    work_match("Argentina vs Saudi Arabia", 2022),   # huge upset (favourite lost)
+    work_match("Argentina vs Croatia", 2022),        # strong favourite delivers
+    work_match("Brazil vs Germany", 2014),           # 1–7: margin multiplier bites
+])
+display(worked.set_index("match"))
+print("Argentina (heavy favourite) LOST to Saudi Arabia → a big negative Δ_home, with the "
+      "same points gained by low-rated Saudi Arabia. Argentina beating Croatia as favourites "
+      "→ small Δ. Germany's 7–1 → the margin multiplier amplifies an already-expected win.")
+""")
+
+md(r"""
+### 2d. Ratings over time
+
+The full-history engine tracks every national team from 1872. Here are a few traditional powers —
+you can see eras rise and fade (Hungary's 1950s peak, Brazil's long dominance, Spain's late-2000s
+surge), which is exactly the signal the strength-of-schedule and upset detectors lean on.
+""")
+
+code(r"""
+traj_teams = ["Brazil", "Germany", "Argentina", "France", "Italy", "Spain", "Hungary"]
+fig, ax = plt.subplots(figsize=(11, 5))
+for i, tm in enumerate(traj_teams):
+    if tm not in elo_timeline:
+        continue
+    dates, ratings = elo_timeline[tm]
+    yrs = pd.to_datetime(dates).year
+    keep = yrs >= 1920
+    ax.plot(yrs[keep], np.array(ratings)[keep], label=tm, color=PAL[i % len(PAL)], lw=1.4)
+ax.axhline(1500, color="k", lw=0.6, ls="--", alpha=0.5)
+ax.set_xlabel("year"); ax.set_ylabel("Elo rating (full international history)")
+ax.set_title("How team strength evolves — full-history Elo, 1920–2022")
+ax.legend(ncol=4, fontsize=8); plt.tight_layout(); plt.show()
+""")
+
+md(r"""
+## 3. Team strength: World-Cup-only vs full international history
 
 Why this matters for the whole analysis. A World-Cup-only Elo has a **cold-start** problem: it has
 never seen a team until its World Cup debut, so it enters that team at a neutral **1500** — even
@@ -114,7 +275,7 @@ with either — swap in `elo_wc` to reproduce the self-contained version.
 """)
 
 md(r"""
-## 3. The headline: irregularities worth looking into
+## 4. The headline: irregularities worth looking into
 
 `collect_anomalies` runs all five detectors and maps each onto a single, clipped `anomaly_score`
 (a z-magnitude) so they can be ranked together. `q_value` is the Benjamini–Hochberg FDR value,
@@ -148,7 +309,7 @@ plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 4. Detector — Upsets (results that defied strength)
+## 5. Detector — Upsets (results that defied strength)
 
 A favourite thrashing a minnow is *statistically* surprising but not interesting. What's worth a
 look is the reverse: a clearly weaker side (by pre-match Elo) **winning**. We rank those by the
@@ -179,7 +340,7 @@ ax.legend(); plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 5. Detector — "Convenient" group results
+## 6. Detector — "Convenient" group results
 
 The archetype is the 1982 **Disgrace of Gijón**: West Germany beat Austria 1-0, a result that
 sent *both* through at Algeria's expense, in a match played the day *after* Algeria had finished.
@@ -204,7 +365,7 @@ print("These are the last two World Cups (both 1982) before simultaneous final "
 """)
 
 md(r"""
-## 6. Detector — Referee discipline
+## 7. Detector — Referee discipline
 
 **(a)** Do individual referees hand out far more (or fewer) cards than the match context warrants?
 We model expected cards from era, knockout-vs-group, and how competitive the match is (by Elo),
@@ -242,7 +403,7 @@ print(f"\nIn decisive matches the host received FEWER cards than its opponent "
 """)
 
 md(r"""
-## 7. Detector — "Easy path" / seeding luck
+## 8. Detector — "Easy path" / seeding luck
 
 For every team that reached the quarter-final or deeper, we measure the strength of the teams it
 actually had to beat — the mean pre-tournament Elo of its opponents — and how many established
@@ -340,7 +501,7 @@ print("Argentina's 2014 & 2022 groups were among the softest (softness ~88), but
 """)
 
 md(r"""
-## 8. Detector — Draw luck: the group is the lever
+## 9. Detector — Draw luck: the group is the lever
 
 The `easy_path` metric above averages over the *whole* run — but by the quarter-final it's nearly
 impossible to avoid strong teams, so that average drowns out the part that actually matters. If you
@@ -406,7 +567,7 @@ That's exactly what a screen should do: surface the pattern, size it, and refuse
 """)
 
 md(r"""
-## 9. Lucky or engineered? A fair-draw Monte-Carlo
+## 10. Lucky or engineered? A fair-draw Monte-Carlo
 
 The group-softness metric shows a team *got* a soft group, but not whether that's surprising —
 or whether the other powers were **packed together elsewhere** so they eliminated each other and
@@ -511,7 +672,7 @@ print(f"2022 was the most BALANCED draw on record (rival clustering "
 """)
 
 md(r"""
-## 10. Detector — FIFA leadership lens (exploratory)
+## 11. Detector — FIFA leadership lens (exploratory)
 
 The most speculative view: map each tournament to the FIFA president in office and ask whether
 over/under-performance clusters by era. **This is correlational and under-powered** — 22
@@ -547,7 +708,7 @@ plt.xticks(rotation=45, ha="right"); plt.tight_layout(); plt.show()
 """)
 
 md(r"""
-## 11. Takeaways
+## 12. Takeaways
 
 - Using ratings grounded in **every international match since 1872** (not just World Cup games)
   removes the cold-start artefact where debutants entered at a neutral 1500 — and it *sharpens*
