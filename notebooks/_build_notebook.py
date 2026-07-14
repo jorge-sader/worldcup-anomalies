@@ -42,18 +42,36 @@ cross-check.
 
 code(r"""
 # --- Environment bootstrap ---------------------------------------------------------
-# This notebook imports the `worldcup_anomalies` package. Locally it's installed via uv;
-# on Colab (or any fresh kernel) it isn't present, so install it straight from GitHub.
-try:
-    import worldcup_anomalies  # noqa: F401
-except ModuleNotFoundError:
-    import subprocess, sys
-    subprocess.check_call([
-        sys.executable, "-m", "pip", "install", "-q",
-        "git+https://github.com/jorge-sader/worldcup-anomalies.git",
-    ])
-    import worldcup_anomalies  # noqa: F401
-print("worldcup_anomalies is ready — data is fetched from the web on first use.")
+# Ensures the LATEST worldcup_anomalies is installed. Locally it's managed by uv. On Colab or any
+# fresh kernel it's installed from GitHub; and if an OLDER copy is already present (e.g. from an
+# earlier run of this notebook), it is force-refreshed to the current version — otherwise a stale
+# install would be missing newer submodules (worldcup_2026, …).
+import importlib, subprocess, sys
+_URL = "git+https://github.com/jorge-sader/worldcup-anomalies.git"
+
+def _install_args():
+    # Probe the newest submodule the notebook needs; if it imports, we're up to date (no-op).
+    try:
+        import worldcup_anomalies.worldcup_2026  # noqa: F401
+        return None
+    except ModuleNotFoundError:
+        pass
+    try:
+        import worldcup_anomalies  # noqa: F401  -> present but stale: refresh code only (fast)
+        return ["--upgrade", "--force-reinstall", "--no-deps", _URL]
+    except ModuleNotFoundError:
+        return [_URL]  # absent: full install, including dependencies
+
+_args = _install_args()
+if _args is not None:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *_args])
+    # Drop any stale already-imported modules so the fresh code is used without a kernel restart.
+    for _m in [k for k in list(sys.modules) if k == "worldcup_anomalies"
+               or k.startswith("worldcup_anomalies.")]:
+        del sys.modules[_m]
+    importlib.invalidate_caches()
+import worldcup_anomalies  # noqa: F401
+print(f"worldcup_anomalies {worldcup_anomalies.__version__} ready — data is fetched on first use.")
 """)
 
 code(r"""
