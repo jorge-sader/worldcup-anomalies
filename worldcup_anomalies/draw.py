@@ -33,6 +33,54 @@ from .elo import pre_tournament_ratings
 from .paths import _furthest_round, group_draw_difficulty
 
 
+def montecarlo_group_draw(
+    group_df: pd.DataFrame,
+    *,
+    n_sims: int,
+    rng: np.random.Generator,
+) -> tuple[float | None, list[dict] | None]:
+    """Shared fair-draw Monte-Carlo core for one set of groups.
+
+    ``group_df`` has one row per team with columns ``group`` and ``elo`` (any other columns are
+    ignored; the row index identifies the team). Each group's strongest team is held fixed and the
+    remaining teams are reshuffled across the groups ``n_sims`` times, using the supplied ``rng``.
+
+    Returns ``(rival_clustering_pct, anchors)`` where ``anchors`` is a list of
+    ``{group, anchor_index, draw_luck_pct}`` (``anchor_index`` is the ``group_df`` index of that
+    group's strongest team, so the caller can recover whatever identity it needs). Returns
+    ``(None, None)`` when group sizes are not uniform or smaller than three.
+    """
+    groups = sorted(group_df["group"].unique())
+    ng = len(groups)
+    sizes = group_df.groupby("group").size()
+    if sizes.nunique() != 1 or int(sizes.iloc[0]) < 3:
+        return None, None
+    gsize = int(sizes.iloc[0])
+
+    anchor_row = group_df.groupby("group")["elo"].idxmax()  # group -> row index of strongest
+    anchor_elo = np.array([group_df.loc[anchor_row[gr], "elo"] for gr in groups])
+    gtot = group_df.groupby("group")["elo"].sum().reindex(groups).to_numpy()
+    actual_var = float(gtot.var())
+    actual_nonanchor = gtot - anchor_elo  # actual opponent-strength sum per anchor
+
+    pool = group_df.loc[~group_df.index.isin(anchor_row.values), "elo"].to_numpy()
+    # Vectorised fair redraws: permute the pool, split into groups, sum each group.
+    perm = np.argsort(rng.random((n_sims, pool.size)), axis=1)
+    vals = pool[perm].reshape(n_sims, ng, gsize - 1).sum(axis=2)  # (n_sims, ng)
+    null_var = (vals + anchor_elo[None, :]).var(axis=1)
+    rival_clustering_pct = float((null_var <= actual_var).mean() * 100)
+
+    anchors = [
+        {
+            "group": gr,
+            "anchor_index": anchor_row[gr],
+            "draw_luck_pct": float((vals[:, i] <= actual_nonanchor[i]).mean() * 100),
+        }
+        for i, gr in enumerate(groups)
+    ]
+    return rival_clustering_pct, anchors
+
+
 def draw_monte_carlo(
     elo_matches: pd.DataFrame,
     group_standings: pd.DataFrame,
@@ -60,44 +108,26 @@ def draw_monte_carlo(
     for tid, gtab in gs.groupby("tournament_id"):
         g = gtab[["group_name", "team_id", "team_name"]].merge(
             pre[pre["tournament_id"] == tid][["team_id", "elo_pre"]], on="team_id"
-        )
-        sizes = g.groupby("group_name").size()
-        if sizes.nunique() != 1 or sizes.iloc[0] < 3:
+        ).rename(columns={"group_name": "group", "elo_pre": "elo"})
+
+        clustering, anchors = montecarlo_group_draw(g, n_sims=n_sims, rng=rng)
+        if clustering is None:
             continue
-        ng, gsize = g["group_name"].nunique(), int(sizes.iloc[0])
-        groups = sorted(g["group_name"].unique())
 
-        anchor_idx = g.groupby("group_name")["elo_pre"].idxmax()
-        g_anchor = g.loc[anchor_idx].set_index("group_name")
-        anchor_elo = np.array([g_anchor.loc[gr, "elo_pre"] for gr in groups])
-        anchor_team = {gr: g_anchor.loc[gr, "team_name"] for gr in groups}
-        anchor_id = {gr: g_anchor.loc[gr, "team_id"] for gr in groups}
-
-        gtot = g.groupby("group_name")["elo_pre"].sum().reindex(groups).to_numpy()
-        actual_var = gtot.var()
-        actual_nonanchor = gtot - anchor_elo  # actual opponent-strength sum per anchor
-
-        pool = g.loc[~g.index.isin(anchor_idx), "elo_pre"].to_numpy()  # ng*(gsize-1) teams
-        # Vectorised fair redraws: permute the pool, split into groups, sum each group.
-        perm = np.argsort(rng.random((n_sims, pool.size)), axis=1)
-        vals = pool[perm].reshape(n_sims, ng, gsize - 1).sum(axis=2)  # (n_sims, ng)
-        null_var = (vals + anchor_elo[None, :]).var(axis=1)
-        rival_clustering_pct = float((null_var <= actual_var).mean() * 100)
-
-        for i, gr in enumerate(groups):
-            draw_luck = float((vals[:, i] <= actual_nonanchor[i]).mean() * 100)
-            key = (tid, anchor_id[gr])
+        for a in anchors:
+            anchor = g.loc[a["anchor_index"]]
+            key = (tid, anchor["team_id"])
             rlabel = furthest.loc[key, "round_label"] if key in furthest.index else None
             rrank = furthest.loc[key, "rank"] if key in furthest.index else np.nan
             rows.append({
                 "tournament_id": tid,
                 "year": int(year_by_t.get(tid, 0)),
-                "team_name": anchor_team[gr],
-                "group_name": gr,
+                "team_name": anchor["team_name"],
+                "group_name": a["group"],
                 "round_label": rlabel,
                 "round_rank": rrank,
-                "draw_luck_pct": draw_luck,
-                "rival_clustering_pct": rival_clustering_pct,
+                "draw_luck_pct": a["draw_luck_pct"],
+                "rival_clustering_pct": clustering,
             })
 
     return pd.DataFrame(rows).sort_values(["year", "draw_luck_pct"]).reset_index(drop=True)

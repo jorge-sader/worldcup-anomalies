@@ -18,6 +18,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .draw import montecarlo_group_draw
 from .intl_elo import load_intl_results
 from .reports import canonical_name
 
@@ -125,38 +126,23 @@ def draw_luck_2026(
     ratings = entering_ratings_2026(elo_timeline, matches_2026)
     gm = gm.assign(elo=gm["team"].map(ratings)).reset_index(drop=True)
 
-    groups = sorted(gm["group"].unique())
-    ng = len(groups)
-    sizes = gm.groupby("group").size()
-    gsize = int(sizes.iloc[0])
-    if sizes.nunique() != 1:
+    clustering, anchors = montecarlo_group_draw(
+        gm, n_sims=n_sims, rng=np.random.default_rng(seed)
+    )
+    if clustering is None:
         raise ValueError("2026 groups are not uniform in size")
 
-    anchor_idx = gm.groupby("group")["elo"].idxmax()
-    g_anchor = gm.loc[anchor_idx].set_index("group")
-    anchor_elo = np.array([g_anchor.loc[gr, "elo"] for gr in groups])
-    anchor_team = {gr: g_anchor.loc[gr, "team"] for gr in groups}
-    gtot = gm.groupby("group")["elo"].sum().reindex(groups).to_numpy()
-    actual_var = gtot.var()
-    actual_nonanchor = gtot - anchor_elo
-    pool = gm.loc[~gm.index.isin(anchor_idx), "elo"].to_numpy()
-
-    rng = np.random.default_rng(seed)
-    perm = np.argsort(rng.random((n_sims, pool.size)), axis=1)
-    vals = pool[perm].reshape(n_sims, ng, gsize - 1).sum(axis=2)
-    null_var = (vals + anchor_elo[None, :]).var(axis=1)
-    rival_clustering_pct = float((null_var <= actual_var).mean() * 100)
-
     qf = set(quarterfinalists_2026(matches_2026))
-    rows = []
-    for i, gr in enumerate(groups):
-        rows.append({
-            "group": gr,
-            "team": anchor_team[gr],
-            "draw_luck_pct": float((vals[:, i] <= actual_nonanchor[i]).mean() * 100),
-            "rival_clustering_pct": rival_clustering_pct,
-            "reached_qf": anchor_team[gr] in qf,
-        })
+    rows = [
+        {
+            "group": a["group"],
+            "team": gm.loc[a["anchor_index"], "team"],
+            "draw_luck_pct": a["draw_luck_pct"],
+            "rival_clustering_pct": clustering,
+            "reached_qf": gm.loc[a["anchor_index"], "team"] in qf,
+        }
+        for a in anchors
+    ]
     return pd.DataFrame(rows).sort_values("draw_luck_pct").reset_index(drop=True)
 
 
