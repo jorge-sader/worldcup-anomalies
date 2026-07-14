@@ -131,9 +131,27 @@ def team_path(
     return rows[cols].rename(columns={"opponent_name": "opponent", "stage_name": "stage"})
 
 
+# Historical names folded into a single continuous national team, as football record-keeping
+# conventionally treats them (FIFA/UEFA successor lineages). East Germany (German DR) is kept
+# separate — its record is not merged into unified Germany. Display-only: team_ids are untouched,
+# so no rating or detector result changes.
+CANONICAL_TEAM = {
+    "West Germany": "Germany",
+    "Soviet Union": "Russia",
+    "Yugoslavia": "Serbia",
+    "Serbia and Montenegro": "Serbia",
+    "Czechoslovakia": "Czech Republic",
+}
+
+
+def canonical_name(name: str) -> str:
+    """Fold a historical team name into its modern continuous entry (identity otherwise)."""
+    return CANONICAL_TEAM.get(name, name)
+
+
 def all_teams(data: WorldCupData) -> list[str]:
-    """Alphabetical list of every team that has appeared in a men's World Cup."""
-    return sorted(data.team_appearances["team_name"].unique())
+    """Alphabetical list of every team (historical names merged into continuous entries)."""
+    return sorted({canonical_name(n) for n in data.team_appearances["team_name"].unique()})
 
 
 def team_history(
@@ -143,21 +161,28 @@ def team_history(
 ) -> list[tuple[str, pd.DataFrame]]:
     """Every tournament a team played, oldest first, as ``(year_label, path)`` pairs.
 
-    Each ``path`` is the :func:`team_path` game-by-game frame for that edition. Feeds the
-    interactive "historical path strength" chart in the notebook.
+    ``team_name`` may be a canonical name (e.g. "Germany"); appearances under predecessor names
+    (West Germany, …) are folded in and the row label carries the historical name in that era
+    (e.g. ``"1974 · West Germany"``). Each ``path`` is the :func:`team_path` frame for that edition.
     """
-    appearances = data.team_appearances[data.team_appearances["team_name"] == team_name]
-    tids = (
-        appearances[["tournament_id"]]
-        .merge(data.tournaments[["tournament_id", "year"]], on="tournament_id")
+    ta = data.team_appearances[["tournament_id", "team_name"]].copy()
+    ta["canon"] = ta["team_name"].map(canonical_name)
+    target = canonical_name(team_name)
+    sub = (
+        ta[ta["canon"] == target]
         .drop_duplicates()
+        .merge(data.tournaments[["tournament_id", "year"]], on="tournament_id")
         .sort_values("year")
     )
     out = []
-    for r in tids.itertuples():
-        path = team_path(data, r.tournament_id, team_name, elo_matches)
-        if not path.empty:
-            out.append((str(int(r.year)), path))
+    for r in sub.itertuples():
+        path = team_path(data, r.tournament_id, r.team_name, elo_matches)
+        if path.empty:
+            continue
+        label = str(int(r.year))
+        if r.team_name != target:  # show the era's historical name for accuracy
+            label += f" · {r.team_name}"
+        out.append((label, path))
     return out
 
 

@@ -39,12 +39,18 @@ def test_team_path_order_and_opponents():
     assert path["opponent_elo"].notna().all()
 
 
-def test_all_teams_sorted_and_complete():
+def test_all_teams_sorted_and_merged():
     d = load_data()
     teams = all_teams(d)
     assert teams == sorted(teams)          # alphabetical for the dropdown
     assert "Argentina" in teams and "Brazil" in teams
-    assert len(teams) > 70
+    # Historical names are folded into continuous entries...
+    for merged in ["West Germany", "Soviet Union", "Yugoslavia",
+                   "Serbia and Montenegro", "Czechoslovakia"]:
+        assert merged not in teams
+    for canon in ["Germany", "Russia", "Serbia", "Czech Republic"]:
+        assert canon in teams
+    assert "East Germany" in teams         # ...but East Germany stays separate
 
 
 def test_team_history_covers_all_appearances():
@@ -53,11 +59,23 @@ def test_team_history_covers_all_appearances():
     hist = team_history(d, "Brazil", em)
     # Brazil has played every men's World Cup (22).
     assert len(hist) == 22
-    years = [int(y) for y, _ in hist]
+    years = [int(y.split(" ")[0]) for y, _ in hist]
     assert years == sorted(years)          # oldest first
     # Each path carries the era-fair opponent-strength percentile used for colour.
     for _, path in hist:
         assert path["opponent_strength_pct"].between(0, 100).all()
+
+
+def test_team_history_merges_predecessors():
+    d = load_data()
+    em = annotate_world_cup(d.matches, build_intl_elo(load_intl_results()))
+    germany = team_history(d, "Germany", em)
+    labels = [lab for lab, _ in germany]
+    # Continuous: pre-war Germany + West Germany years + unified Germany.
+    assert any("West Germany" in lab for lab in labels)
+    assert labels[0].startswith("1934") and labels[-1].startswith("2022")
+    serbia = team_history(d, "Serbia", em)
+    assert any("Yugoslavia" in lab for lab, _ in serbia)
 
 
 def test_champions_paths_matrix():

@@ -185,9 +185,14 @@ played — one row per edition, same encoding as above (colour = opponent streng
 knockout rounds boxed). This is a team's historical strength-of-schedule at a glance: soft groups
 show up as pale left-hand cells, deep runs as long rows ending in red knockout boxes.
 
+Historical names are folded into **continuous entries** (FIFA successor lineages): "Germany"
+spans its West Germany years, "Serbia" folds in Yugoslavia and Serbia & Montenegro, "Russia" the
+Soviet Union, "Czech Republic" Czechoslovakia — each row still labelled with the name used in that
+era (e.g. `1974 · West Germany`). East Germany is kept separate.
+
 *The dropdown needs a live kernel* (open in Colab, or run locally). On the static GitHub/nbviewer
-view, the **Argentina** default is rendered below as a still image; open in Colab to switch teams,
-or just call `show_team_history("Brazil")` in a cell.
+view, the **Germany** default is rendered below as a still image (note the West Germany rows folded
+in); open in Colab to switch teams, or just call `show_team_history("Brazil")` in a cell.
 """)
 
 code(r"""
@@ -205,12 +210,12 @@ def show_team_history(team):
     plt.show()
 
 # Static default so the chart is visible even on non-interactive viewers (GitHub/nbviewer):
-show_team_history("Argentina")
+show_team_history("Germany")
 
 # Live dropdown (needs a running kernel — Colab or local Jupyter):
 widgets.interact(
     show_team_history,
-    team=widgets.Dropdown(options=all_teams(data), value="Argentina", description="Team:"),
+    team=widgets.Dropdown(options=all_teams(data), value="Germany", description="Team:"),
 );
 """)
 
